@@ -43,6 +43,11 @@ This bridge implements the **"Code Execution with MCP"** pattern—a revolutiona
 - **Type-safe** - Proper signatures and docs
 - **TOON responses** - Tool outputs are emitted as TOON code blocks for token-efficient prompting
 
+### TOON Response Format
+- We encode every MCP bridge response using [Token-Oriented Object Notation](https://github.com/toon-format/toon) (TOON).
+- TOON collapses repetitive JSON keys and emits newline-aware arrays, trimming token counts 30-60% for uniform tables so LLM bills stay lower.
+- Clients that expect plain JSON can still recover the structured payload: the TOON code block includes the same fields (status, stdout, stderr, etc.) and we fall back to JSON automatically if the encoder is unavailable.
+
 ## Quick Start
 
 ### 1. Prerequisites (macOS or Linux)
