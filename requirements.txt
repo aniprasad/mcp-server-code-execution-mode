@@ -1,0 +1,7 @@
+# MCP Code Execution Server Requirements
+# Core MCP SDK
+mcp>=1.0.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
