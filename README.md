@@ -317,6 +317,7 @@ Selectable via RPC: ('stub',)
 - [Code Execution with MCP (Anthropic)](https://www.anthropic.com/engineering/code-execution-with-mcp)
 - [Code Mode (Cloudflare)](https://blog.cloudflare.com/code-mode/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
+- [Dynamic MCPs with Docker](https://www.docker.com/blog/dynamic-mcps-stop-hardcoding-your-agents-world/)
 
 ## Status
 
@@ -338,6 +339,9 @@ Selectable via RPC: ('stub',)
 - Web UI
 - Multi-language support
 - Workflow orchestration
+- Agent-visible discovery channel (host-proxied `mcp-find`/`mcp-add`)
+- Execution telemetry (structured logs, metrics, traces)
+- Persistent and shareable code-mode artifacts
 
 ## License
 

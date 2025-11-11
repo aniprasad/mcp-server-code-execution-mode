@@ -47,8 +47,11 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 
 - Observability
   - Structured logging with request IDs
-  - Metrics (container launches, exits, errors)
+  - Metrics and traces for container launches, exits, errors, and tool calls
   - MCP proxy latency/failure tracking
+- Agent-visible discovery channel
+  - Host-proxied `mcp-find`/`mcp-add` so agents can curate servers dynamically
+  - Catalog-aware policy checks before enabling newly added servers
 
 **Priority 2 (Production Hardening):**
 - Policy controls
@@ -69,6 +72,7 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 - Multi-language execution support
 - Workflow orchestration features
 - Advanced caching strategies
+- Persistent and shareable code-mode artifacts that survive individual runs
 
 ## Production Readiness
 
