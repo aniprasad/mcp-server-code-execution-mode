@@ -35,6 +35,11 @@ The pivot to rootless containers provided:
 - **2025 refinement**: Replaced the Unix-domain socket bridge with a JSON-over-stdio
     protocol to simplify container wiring and enable direct integration with
     Docker's MCP gateway.
+- **2025-11 release**: Corrected the stdio bridge startup by removing the stray
+    `stdio_server(app)` call and began returning responses as proper
+    `CallToolResult` objects (TOON text + mirrored `structuredContent`). The
+    fix ships in the public package, so the `uvx` shim now reflects the latest
+    behaviour.
 
 ## Key Lessons
 

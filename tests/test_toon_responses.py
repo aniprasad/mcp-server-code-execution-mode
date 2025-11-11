@@ -31,13 +31,23 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
                 {"code": "print('ok')"},
             )
 
-        self.assertEqual(len(response), 1)
-        content = response[0]["content"][0]
-        self.assertEqual(content["type"], "text")
-        body = _extract_toon_body(content["text"])
+        self.assertFalse(response.isError)
+        content = response.content[0]
+        self.assertEqual(content.type, "text")
+        body = _extract_toon_body(content.text)
         decoded = toon_decode(body)
         self.assertEqual(
             decoded,
+            {
+                "status": "success",
+                "summary": "Success",
+                "exitCode": 0,
+                "stdout": ["line1", "line2"],
+                "stderr": [],
+            },
+        )
+        self.assertEqual(
+            response.structuredContent,
             {
                 "status": "success",
                 "summary": "Success",
@@ -63,11 +73,24 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
                 {"code": "print('slow')", "timeout": 5},
             )
 
-        content = response[0]["content"][0]
-        body = _extract_toon_body(content["text"])
+        self.assertTrue(response.isError)
+        content = response.content[0]
+        self.assertEqual(content.type, "text")
+        body = _extract_toon_body(content.text)
         decoded = toon_decode(body)
         self.assertEqual(
             decoded,
+            {
+                "status": "timeout",
+                "summary": "Timeout: execution exceeded 5s",
+                "stdout": ["partial output"],
+                "stderr": ["traceback info"],
+                "error": "Execution timed out after 5 seconds",
+                "timeoutSeconds": 5,
+            },
+        )
+        self.assertEqual(
+            response.structuredContent,
             {
                 "status": "timeout",
                 "summary": "Timeout: execution exceeded 5s",
@@ -82,11 +105,23 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
         if toon_decode is None:
             self.skipTest("toon-format not installed")
         response = await bridge_module.call_tool("run_python", {})
-        content = response[0]["content"][0]
-        body = _extract_toon_body(content["text"])
+        self.assertTrue(response.isError)
+        content = response.content[0]
+        self.assertEqual(content.type, "text")
+        body = _extract_toon_body(content.text)
         decoded = toon_decode(body)
         self.assertEqual(
             decoded,
+            {
+                "status": "validation_error",
+                "summary": "Missing 'code' argument",
+                "stdout": [],
+                "stderr": [],
+                "error": "Missing 'code' argument",
+            },
+        )
+        self.assertEqual(
+            response.structuredContent,
             {
                 "status": "validation_error",
                 "summary": "Missing 'code' argument",

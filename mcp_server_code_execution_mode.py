@@ -27,7 +27,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool
+from mcp.types import CallToolResult, TextContent, Tool
 
 logger = logging.getLogger("mcp-server-code-execution-mode")
 
@@ -149,12 +149,18 @@ def _build_response_payload(
     return payload
 
 
-def _build_tool_response(**kwargs: object) -> List[Dict[str, object]]:
+def _build_tool_response(**kwargs: object) -> CallToolResult:
     """Render a TOON (or JSON fallback) message for tool responses."""
 
     payload = _build_response_payload(**kwargs)
     message = _render_toon_block(payload)
-    return [{"content": [{"type": "text", "text": message}]}]
+    status = str(payload.get("status", "error")).lower()
+    is_error = status not in {"success"}
+    return CallToolResult(
+        content=[TextContent(type="text", text=message)],
+        structuredContent=payload,
+        isError=is_error,
+    )
 
 
 def _sanitize_identifier(value: str, *, default: str) -> str:
@@ -854,7 +860,6 @@ class RootlessContainerSandbox:
                 "machine",
                 "set",
                 "--rootful",
-                "--now",
                 "--volume",
                 share_spec,
                 stdout=asyncio.subprocess.PIPE,
@@ -1198,7 +1203,7 @@ async def list_tools() -> List[Tool]:
 
 
 @app.call_tool()
-async def call_tool(name: str, arguments: Dict[str, object]) -> List[Dict[str, object]]:
+async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
     if name != "run_python":
         return _build_tool_response(
             status="error",
@@ -1277,7 +1282,7 @@ async def call_tool(name: str, arguments: Dict[str, object]) -> List[Dict[str, o
 
 async def main() -> None:
     logging.basicConfig(level=os.environ.get("MCP_BRIDGE_LOG_LEVEL", "INFO"))
-    async with stdio_server(app) as (read_stream, write_stream):
+    async with stdio_server() as (read_stream, write_stream):
         await app.run(read_stream, write_stream, app.create_initialization_options())
 
 

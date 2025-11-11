@@ -88,8 +88,10 @@ stdio mediate MCP tool access through the host.
    Memory, PID, and CPU limits are derived from environment variables, and
    `--no-new-privileges` is enforced.
 6. The bridge consumes JSON frames from stdout/stderr, routes MCP requests via
-  `SandboxInvocation.handle_rpc`, enforces the timeout, and translates exit
-  codes and errors into MCP responses.
+  `SandboxInvocation.handle_rpc`, enforces the timeout, and returns a
+  `CallToolResult` where `structuredContent` carries the full status/IO payload
+  and `content[0].text` exposes the same data in TOON format for LLM-friendly
+  rendering.
 7. Temporary IPC assets are cleaned up and MCP clients remain warm for future
    calls.
 

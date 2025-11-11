@@ -88,8 +88,13 @@ Create `~/.config/mcp/servers/mcp-server-code-execution-mode.json`:
 {
   "mcpServers": {
     "mcp-server-code-execution-mode": {
-      "command": "uv",
-      "args": ["run", "python", "/absolute/path/to/mcp_server_code_execution_mode.py"],
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/elusznik/mcp-server-code-execution-mode",
+        "mcp-server-code-execution-mode",
+        "run"
+      ],
       "env": {
         "MCP_BRIDGE_RUNTIME": "podman"
       }
@@ -252,7 +257,7 @@ The bridge logs discovered servers on startup:
 
 ### Response Format (TOON)
 
-The bridge wraps every tool response in a [Token-Oriented Object Notation](https://github.com/toon-format/toon) code block. TOON keeps the familiar JSON fields (status, stdout, stderr, etc.) but removes repeated keys and normalises arrays, typically saving 30–60% tokens for uniform tabular data. Lower token counts mean cheaper LLM calls and tighter prompts. If the encoder is unavailable the bridge automatically falls back to pretty-printed JSON, so integrations that expect bare JSON can still parse the payload without extra configuration.
+The bridge wraps every tool response in a [Token-Oriented Object Notation](https://github.com/toon-format/toon) code block. TOON keeps the familiar JSON fields (status, stdout, stderr, etc.) but removes repeated keys and normalises arrays, typically saving 30–60% tokens for uniform tabular data. Lower token counts mean cheaper LLM calls and tighter prompts. Integrations can also read the same data from `CallToolResult.structuredContent`; the TOON block inside `CallToolResult.content[0].text` is simply a compact rendering. If the encoder is unavailable the bridge automatically falls back to pretty-printed JSON.
 
 ### Basic Pattern: Direct Tool Use
 
@@ -406,6 +411,19 @@ result = await server.read_file(path='/tmp')
 **Note:** The `servers` parameter is only used when making the initial MCP tool call. The sandbox code sees only the proxies that were requested up front.
 
 ## Troubleshooting
+
+### Startup throws `TypeError: 'async for' requires an object with __aiter__`
+
+**Problem:**
+```
+TypeError: 'async for' requires an object with __aiter__ method, got Server
+```
+
+**Solution:**
+You are likely running a pre-0.2.1 build that passed the server instance into
+`stdio_server`. Upgrade to the latest release (or reinstall via `uvx
+--from git+https://github.com/elusznik/mcp-server-code-execution-mode
+mcp-server-code-execution-mode run`) and retry.
 
 ### Container Runtime Not Found
 

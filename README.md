@@ -46,7 +46,7 @@ This bridge implements the **"Code Execution with MCP"** pattern—a revolutiona
 ### TOON Response Format
 - We encode every MCP bridge response using [Token-Oriented Object Notation](https://github.com/toon-format/toon) (TOON).
 - TOON collapses repetitive JSON keys and emits newline-aware arrays, trimming token counts 30-60% for uniform tables so LLM bills stay lower.
-- Clients that expect plain JSON can still recover the structured payload: the TOON code block includes the same fields (status, stdout, stderr, etc.) and we fall back to JSON automatically if the encoder is unavailable.
+- Clients can consume structured data directly from `CallToolResult.structuredContent`; the TOON block stored in `CallToolResult.content[0].text` mirrors the same payload. If the encoder is unavailable we fall back to indented JSON automatically.
 
 ## Quick Start
 
@@ -75,6 +75,12 @@ uv sync
 ```
 
 ### 3. Launch Bridge
+
+```bash
+uvx --from git+https://github.com/elusznik/mcp-server-code-execution-mode mcp-server-code-execution-mode run
+```
+
+If you prefer to run from a local checkout, the equivalent command is:
 
 ```bash
 uv run python mcp_server_code_execution_mode.py
