@@ -1,10 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "code-execution"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "An MCP server that executes Python code in isolated rootless containers with optional MCP server proxying."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
 	"mcp>=1.0.0",
 	"toon-format>=0.9.0b1",
 ]
+
+# --- This solves your build error ---
+[tool.setuptools]
+py-modules = ["mcp_server_code_execution_mode"]
+
+# --- This creates your command ---
+[project.scripts]
+# This creates the command: mcp-server-code-execution-mode
+mcp-server-code-execution-mode = "main:main"
