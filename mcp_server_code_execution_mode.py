@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import keyword
 import logging
@@ -44,6 +45,7 @@ DEFAULT_RUNTIME_IDLE_TIMEOUT = int(os.environ.get("MCP_BRIDGE_RUNTIME_IDLE_TIMEO
 
 SANDBOX_HELPERS_SUMMARY = (
     "Sandbox helpers: mcp.runtime.list_servers(), list_tools(server), describe_server(name), "
+    "query_tool_docs(server, tool=None, detail='summary'), search_tool_docs(query, limit=5, detail='summary'), "
     "discovered_servers(), list_loaded_server_metadata(). Loaded servers also appear as mcp_<alias> proxies."
 )
 
@@ -474,6 +476,31 @@ class RootlessContainerSandbox:
                 def list_loaded_server_metadata():
                     return tuple(AVAILABLE_SERVERS)
 
+                async def query_tool_docs(server, tool=None, detail="summary"):
+                    payload = {"type": "query_tool_docs", "server": server}
+                    if tool is not None:
+                        payload["tool"] = tool
+                    if detail is not None:
+                        payload["detail"] = detail
+                    response = await _rpc_call(payload)
+                    if not response.get("success", True):
+                        raise MCPError(response.get("error", "MCP request failed"))
+                    docs = response.get("docs", [])
+                    if tool is not None and isinstance(docs, list) and len(docs) == 1:
+                        return docs[0]
+                    return docs
+
+                async def search_tool_docs(query, *, limit=5, detail="summary"):
+                    payload = {"type": "search_tool_docs", "query": query}
+                    if limit is not None:
+                        payload["limit"] = limit
+                    if detail is not None:
+                        payload["detail"] = detail
+                    response = await _rpc_call(payload)
+                    if not response.get("success", True):
+                        raise MCPError(response.get("error", "MCP request failed"))
+                    return response.get("results", [])
+
                 runtime_module.MCPError = MCPError
                 runtime_module.call_tool = call_tool
                 runtime_module.list_tools = list_tools
@@ -481,6 +508,8 @@ class RootlessContainerSandbox:
                 runtime_module.discovered_servers = discovered_servers
                 runtime_module.describe_server = describe_server
                 runtime_module.list_loaded_server_metadata = list_loaded_server_metadata
+                runtime_module.query_tool_docs = query_tool_docs
+                runtime_module.search_tool_docs = search_tool_docs
                 runtime_module.__all__ = [
                     "MCPError",
                     "call_tool",
@@ -489,6 +518,8 @@ class RootlessContainerSandbox:
                     "discovered_servers",
                     "describe_server",
                     "list_loaded_server_metadata",
+                    "query_tool_docs",
+                    "search_tool_docs",
                 ]
 
                 servers_module.__all__ = []
@@ -948,36 +979,8 @@ class SandboxInvocation:
     async def __aenter__(self) -> "SandboxInvocation":
         self.server_metadata = []
         for server_name in self.active_servers:
-            alias = self.bridge._alias_for(server_name)
-            client = self.bridge.clients.get(server_name)
-            if not client:
-                raise SandboxError(f"MCP server {server_name} is not loaded")
-            tool_specs = await client.list_tools()
-            alias_counts: Dict[str, int] = {}
-            tools: List[Dict[str, object]] = []
-            for spec in tool_specs:
-                raw_name = spec.get("name") or "tool"
-                base_alias = _sanitize_identifier(str(raw_name), default="tool")
-                alias_counts[base_alias] = alias_counts.get(base_alias, 0) + 1
-                count = alias_counts[base_alias]
-                tool_alias = base_alias if count == 1 else f"{base_alias}_{count}"
-                input_schema = spec.get("input_schema") or spec.get("inputSchema")
-                description = spec.get("description") or ""
-                tools.append(
-                    {
-                        "name": raw_name,
-                        "alias": tool_alias,
-                        "description": description,
-                        "input_schema": input_schema,
-                    }
-                )
-            self.server_metadata.append(
-                {
-                    "name": server_name,
-                    "alias": alias,
-                    "tools": tools,
-                }
-            )
+            metadata = await self.bridge.get_cached_server_metadata(server_name)
+            self.server_metadata.append(metadata)
         self.allowed_servers = {meta["name"] for meta in self.server_metadata}
         self.discovered_servers = sorted(self.bridge.servers.keys())
         state_dir_env = os.environ.get("MCP_BRIDGE_STATE_DIR")
@@ -1020,6 +1023,51 @@ class SandboxInvocation:
                 "success": True,
                 "servers": sorted(self.allowed_servers),
             }
+
+        if req_type == "query_tool_docs":
+            server = request.get("server")
+            if not isinstance(server, str) or server not in self.allowed_servers:
+                return {
+                    "success": False,
+                    "error": f"Server {server!r} is not available",
+                }
+            tool = request.get("tool")
+            if tool is not None and not isinstance(tool, str):
+                return {
+                    "success": False,
+                    "error": "'tool' must be a string when provided",
+                }
+            detail = request.get("detail", "summary")
+            try:
+                docs = await self.bridge.get_tool_docs(server, tool=tool, detail=detail)
+            except SandboxError as exc:
+                return {"success": False, "error": str(exc)}
+            return {"success": True, "docs": docs}
+
+        if req_type == "search_tool_docs":
+            query = request.get("query")
+            if not isinstance(query, str) or not query.strip():
+                return {
+                    "success": False,
+                    "error": "Missing 'query' value",
+                }
+            limit = request.get("limit", 5)
+            if not isinstance(limit, int):
+                return {
+                    "success": False,
+                    "error": "'limit' must be an integer",
+                }
+            detail = request.get("detail", "summary")
+            try:
+                results = await self.bridge.search_tool_docs(
+                    query,
+                    allowed_servers=sorted(self.allowed_servers),
+                    limit=limit,
+                    detail=detail,
+                )
+            except SandboxError as exc:
+                return {"success": False, "error": str(exc)}
+            return {"success": True, "results": results}
 
         if req_type not in {"list_tools", "call_tool"}:
             return {
@@ -1070,6 +1118,10 @@ class MCPBridge:
         self.loaded_servers: set[str] = set()
         self._aliases: Dict[str, str] = {}
         self._discovered = False
+        self._server_metadata_cache: Dict[str, Dict[str, object]] = {}
+        self._server_docs_cache: Dict[str, Dict[str, object]] = {}
+        self._search_index: List[Dict[str, object]] = []
+        self._search_index_dirty = False
 
     async def discover_servers(self) -> None:
         if self._discovered:
@@ -1135,6 +1187,9 @@ class MCPBridge:
         self.clients[server_name] = client
         self.loaded_servers.add(server_name)
         logger.info("Loaded MCP server %s", server_name)
+        self._server_metadata_cache.pop(server_name, None)
+        self._server_docs_cache.pop(server_name, None)
+        self._search_index_dirty = True
 
     def _alias_for(self, name: str) -> str:
         if name in self._aliases:
@@ -1150,6 +1205,197 @@ class MCPBridge:
             alias = f"{base}_{suffix}"
         self._aliases[name] = alias
         return alias
+
+    async def _ensure_server_metadata(self, server_name: str) -> None:
+        if server_name in self._server_metadata_cache:
+            return
+
+        client = self.clients.get(server_name)
+        if not client:
+            raise SandboxError(f"Server {server_name} is not loaded")
+
+        tool_specs = await client.list_tools()
+        alias = self._alias_for(server_name)
+        alias_counts: Dict[str, int] = {}
+        tools: List[Dict[str, object]] = []
+        doc_entries: List[Dict[str, object]] = []
+        identifier_index: Dict[str, Dict[str, object]] = {}
+
+        for spec in tool_specs:
+            raw_name = str(spec.get("name") or "tool")
+            base_alias = _sanitize_identifier(raw_name, default="tool")
+            alias_counts[base_alias] = alias_counts.get(base_alias, 0) + 1
+            count = alias_counts[base_alias]
+            tool_alias = base_alias if count == 1 else f"{base_alias}_{count}"
+
+            input_schema = spec.get("input_schema") or spec.get("inputSchema")
+            description = str(spec.get("description") or "").strip()
+
+            tool_payload = {
+                "name": raw_name,
+                "alias": tool_alias,
+                "description": description,
+                "input_schema": input_schema,
+            }
+            tools.append(tool_payload)
+
+            keywords = " ".join(
+                filter(
+                    None,
+                    {
+                        server_name,
+                        alias,
+                        raw_name,
+                        tool_alias,
+                        description,
+                    },
+                )
+            ).lower()
+
+            doc_entry = {
+                "name": raw_name,
+                "alias": tool_alias,
+                "description": description,
+                "input_schema": input_schema,
+                "keywords": keywords,
+            }
+            doc_entries.append(doc_entry)
+            identifier_index[tool_alias.lower()] = doc_entry
+            identifier_index[raw_name.lower()] = doc_entry
+
+        metadata = {
+            "name": server_name,
+            "alias": alias,
+            "tools": tools,
+        }
+
+        self._server_metadata_cache[server_name] = metadata
+        self._server_docs_cache[server_name] = {
+            "name": server_name,
+            "alias": alias,
+            "tools": doc_entries,
+            "identifier_index": identifier_index,
+        }
+        self._search_index_dirty = True
+
+    async def get_cached_server_metadata(self, server_name: str) -> Dict[str, object]:
+        await self._ensure_server_metadata(server_name)
+        return copy.deepcopy(self._server_metadata_cache[server_name])
+
+    @staticmethod
+    def _normalise_detail(value: object) -> str:
+        detail = str(value).lower() if value is not None else "summary"
+        return detail if detail in {"summary", "full"} else "summary"
+
+    @staticmethod
+    def _format_tool_doc(
+        server_name: str,
+        server_alias: str,
+        info: Dict[str, object],
+        detail: str,
+    ) -> Dict[str, object]:
+        doc: Dict[str, object] = {
+            "server": server_name,
+            "serverAlias": server_alias,
+            "tool": info.get("name"),
+            "toolAlias": info.get("alias"),
+        }
+        description = info.get("description")
+        if description:
+            doc["description"] = description
+        if detail == "full" and info.get("input_schema") is not None:
+            doc["inputSchema"] = info.get("input_schema")
+        return doc
+
+    async def get_tool_docs(
+        self,
+        server_name: str,
+        *,
+        tool: Optional[str] = None,
+        detail: object = "summary",
+    ) -> List[Dict[str, object]]:
+        await self._ensure_server_metadata(server_name)
+        cache_entry = self._server_docs_cache.get(server_name)
+        if not cache_entry:
+            raise SandboxError(f"Documentation unavailable for server {server_name}")
+
+        detail_value = self._normalise_detail(detail)
+        server_alias = str(cache_entry.get("alias", ""))
+        docs: List[Dict[str, object]] = []
+
+        if tool is not None:
+            if not isinstance(tool, str):
+                raise SandboxError("'tool' must be a string when provided")
+            identifier_map = cache_entry.get("identifier_index", {})
+            match = identifier_map.get(tool.lower()) if isinstance(identifier_map, dict) else None
+            if not match:
+                raise SandboxError(f"Tool {tool!r} not found for server {server_name}")
+            docs.append(self._format_tool_doc(server_name, server_alias, match, detail_value))
+            return docs
+
+        for info in cache_entry.get("tools", []):
+            docs.append(self._format_tool_doc(server_name, server_alias, info, detail_value))
+        return docs
+
+    def _ensure_search_index(self) -> None:
+        if not self._search_index_dirty:
+            return
+
+        entries: List[Dict[str, object]] = []
+        for server_name, cache_entry in self._server_docs_cache.items():
+            server_alias = str(cache_entry.get("alias", ""))
+            for info in cache_entry.get("tools", []):
+                entries.append(
+                    {
+                        "server": server_name,
+                        "server_alias": server_alias,
+                        "info": info,
+                        "keywords": info.get("keywords", ""),
+                    }
+                )
+
+        self._search_index = entries
+        self._search_index_dirty = False
+
+    async def search_tool_docs(
+        self,
+        query: str,
+        *,
+        allowed_servers: Sequence[str],
+        limit: int = 5,
+        detail: object = "summary",
+    ) -> List[Dict[str, object]]:
+        if not query.strip():
+            return []
+
+        for server_name in allowed_servers:
+            await self._ensure_server_metadata(server_name)
+
+        self._ensure_search_index()
+        tokens = [token for token in query.lower().split() if token]
+        if not tokens:
+            return []
+
+        detail_value = self._normalise_detail(detail)
+        allowed = set(allowed_servers)
+        matches: List[Dict[str, object]] = []
+
+        for entry in self._search_index:
+            if entry.get("server") not in allowed:
+                continue
+            keywords = entry.get("keywords", "")
+            if all(token in keywords for token in tokens):
+                matches.append(
+                    self._format_tool_doc(
+                        str(entry.get("server")),
+                        str(entry.get("server_alias", "")),
+                        entry.get("info", {}),
+                        detail_value,
+                    )
+                )
+
+        capped = max(1, min(20, limit))
+        return matches[:capped]
 
     async def execute_code(
         self,

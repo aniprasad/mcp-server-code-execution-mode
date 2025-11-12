@@ -369,6 +369,22 @@ if loaded:
   description = runtime.describe_server(loaded[0]["name"])
   for tool in description["tools"]:
     print(tool["alias"], "→", tool.get("description", ""))
+
+# Summaries or full schemas only when needed
+if loaded:
+  summaries = await runtime.query_tool_docs(loaded[0]["name"])
+  detailed = await runtime.query_tool_docs(
+    loaded[0]["name"],
+    tool=summaries[0]["toolAlias"],
+    detail="full",
+  )
+  print("Summaries:", summaries)
+  print("Detailed doc:", detailed)
+
+# Keyword search across the servers already loaded in this run
+results = await runtime.search_tool_docs("calendar events", limit=3)
+for result in results:
+  print(result["server"], result["tool"], result.get("description", ""))
 ```
 
 Typical output for the stub test server:

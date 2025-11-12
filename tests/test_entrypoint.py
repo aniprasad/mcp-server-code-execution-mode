@@ -140,6 +140,8 @@ class EntryPointGenerationTests(unittest.TestCase):
         self.assertIsNotNone(runtime_module)
         if runtime_module is not None:
             self.assertEqual(runtime_module.discovered_servers(), ("demo-server",))
+            self.assertTrue(hasattr(runtime_module, "query_tool_docs"))
+            self.assertTrue(hasattr(runtime_module, "search_tool_docs"))
 
 
 if __name__ == "__main__":  # pragma: no cover
