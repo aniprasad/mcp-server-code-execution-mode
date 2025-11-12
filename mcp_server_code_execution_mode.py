@@ -42,6 +42,11 @@ DEFAULT_CPUS = os.environ.get("MCP_BRIDGE_CPUS")
 CONTAINER_USER = os.environ.get("MCP_BRIDGE_CONTAINER_USER", "65534:65534")
 DEFAULT_RUNTIME_IDLE_TIMEOUT = int(os.environ.get("MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT", "300"))
 
+SANDBOX_HELPERS_SUMMARY = (
+    "Sandbox helpers: mcp.runtime.list_servers(), list_tools(server), describe_server(name), "
+    "discovered_servers(), list_loaded_server_metadata(). Loaded servers also appear as mcp_<alias> proxies."
+)
+
 CONFIG_DIRS = [
     Path.home() / ".config" / "mcp" / "servers",
     Path.home() / "Library" / "Application Support" / "Claude Code" / "mcp" / "servers",
@@ -1198,7 +1203,10 @@ async def list_tools() -> List[Tool]:
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": "Python source code to execute",
+                        "description": (
+                            "Python source code to execute. "
+                            f"{SANDBOX_HELPERS_SUMMARY}"
+                        ),
                     },
                     "servers": {
                         "type": "array",
