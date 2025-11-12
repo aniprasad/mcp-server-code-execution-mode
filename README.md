@@ -15,6 +15,96 @@ This bridge implements the **"Code Execution with MCP"** pattern—a revolutiona
 3. **Eliminates context overhead** (95%+ reduction)
 4. **Enables complex workflows** through Python code
 
+## What This Solves (That Others Don't)
+
+### The Problem: MCP Token Bankruptcy
+
+Point a traditional MCP client at 10+ servers and you pay for every tool schema in every prompt—easily 30,000+ tokens before the model writes a single line of code. Scaling catalogs becomes cost-prohibitive and brittle.
+
+### Existing Approaches
+
+- **Docker MCP Gateway** – bootstraps third-party servers but still streams every schema into the session.
+- **Cloudflare Code Mode** – V8 isolates with a curated catalog, yet you cannot proxy the MCP servers you already rely on.
+- **Blog posts and papers** – describe discovery-first patterns without a hardened implementation.
+- **Proofs of concept** – demonstrate the idea but skip security, persistence, and proxying edge cases.
+
+### This Bridge
+
+- Ships a ~200-token helper summary that teaches the LLM to discover metadata on demand rather than preload it.
+- Proxies any stdio MCP server into a rootless, capability-dropped Python sandbox.
+- Mirrors Anthropic's discovery guidance, adds fuzzy search, and keeps responses compact (with optional TOON output).
+- Builds on your existing configs: autodetects Claude, Cursor, Docker MCP gateway, and project-local manifests.
+
+### Architecture: How It Differs
+
+```
+Traditional MCP (Context-Bound)
+┌─────────────────────────────┐
+│   LLM Context (30K tokens)  │
+│  - serverA.tool1: {...}     │
+│  - serverA.tool2: {...}     │
+│  - serverB.tool1: {...}     │
+│  - … (dozens more)          │
+└─────────────────────────────┘
+        ↓
+  LLM picks tool
+        ↓
+   Tool executes
+
+This Bridge (Discovery-First)
+┌─────────────────────────────┐
+│  LLM Context (≈200 tokens)  │
+│  “Use discovered_servers(), │
+│   query_tool_docs(),        │
+│   search_tool_docs()”       │
+└─────────────────────────────┘
+        ↓
+      LLM discovers servers
+        ↓
+      LLM hydrates schemas
+        ↓
+      LLM writes Python
+        ↓
+   Bridge proxies execution
+```
+
+Result: constant overhead. Whether you manage 10 or 1000 tools, the system prompt stays right-sized and schemas flow only when requested.
+
+### Comparison At A Glance
+
+| Capability | Docker MCP Gateway | Cloudflare Code Mode | Research Patterns | This Bridge |
+|------------|--------------------|----------------------|-------------------|--------------|
+| Solves token bloat | ❌ Manual preload | ❌ Fixed catalog | ❌ Theory only | ✅ Discovery runtime |
+| Universal MCP proxying | ✅ Containers | ⚠️ Platform-specific | ❌ Not provided | ✅ Any stdio server |
+| Rootless security | ⚠️ Optional | ✅ V8 isolate | ❌ Not addressed | ✅ Cap-dropped sandbox |
+| Auto-discovery | ⚠️ Catalog-bound | ❌ N/A | ❌ Not implemented | ✅ 9 config paths |
+| Tool doc search | ❌ | ❌ | ⚠️ Conceptual | ✅ `search_tool_docs()` |
+| Production hardening | ⚠️ Depends on you | ✅ Managed service | ❌ Prototype | ✅ Tested bridge |
+
+### Unique Features
+
+1. **Two-stage discovery** – `discovered_servers()` reveals what exists; `query_tool_docs(name)` loads only the schemas you need.
+2. **Fuzzy search across servers** – let the model find tools without memorising catalog names:
+
+   ```python
+   from mcp import runtime
+
+   matches = await runtime.search_tool_docs("calendar events", limit=5)
+   for hit in matches:
+  print(hit["server"], hit["tool"], hit.get("description", ""))
+   ```
+
+3. **Zero-copy proxying** – every tool call stays within the sandbox, mirrored over stdio with strict timeouts.
+4. **Rootless by default** – Podman/Docker containers run with `--cap-drop=ALL`, read-only root, no-new-privileges, and explicit memory/PID caps.
+5. **Compact + TOON output** – minimal plain-text responses for most runs, with deterministic TOON blocks available via `MCP_BRIDGE_OUTPUT_MODE=toon`.
+
+### Who This Helps
+
+- Teams juggling double-digit MCP servers who cannot afford context bloat.
+- Agents that orchestrate loops, retries, and conditionals rather than single tool invocations.
+- Security-conscious operators who need rootless isolation for LLM-generated code.
+- Practitioners who want to reuse existing MCP catalogs without hand-curating manifests.
+
 ## Key Features
 
 ### 🔒 Security First
