@@ -272,6 +272,15 @@ The bridge logs discovered servers on startup:
 - **TOON mode** – Set `MCP_BRIDGE_OUTPUT_MODE=toon` when you prefer [Token-Oriented Object Notation](https://github.com/toon-format/toon) blocks. We still drop empty strings/collections before encoding, and the TOON block mirrors the same `structuredContent` payload.
 - **JSON fallback** – If the TOON encoder is missing the bridge automatically falls back to indented JSON blocks, so integrations always receive readable text alongside the structured data.
 
+### Tool Discovery Flow
+
+1. `SANDBOX_HELPERS_SUMMARY` only reminds the model that discovery helpers exist; it does **not** list servers or tools. The initial system prompt remains ~200 tokens even as catalogs grow.
+2. Typical agent interactions begin with `await mcp.runtime.discovered_servers()` (or `list_servers()`) to see which MCP servers are available for the current run.
+3. The agent then fetches documentation on demand via `await mcp.runtime.query_tool_docs(server)` or performs fuzzy lookups with `await mcp.runtime.search_tool_docs("keyword")`.
+4. Armed with those results, the agent calls the auto-generated `mcp_<alias>` proxies or `await mcp.runtime.call_tool(...)` inside its Python code.
+
+This discovery-first pattern keeps token usage nearly constant while still giving the LLM access to rich tool metadata whenever it needs it.
+
 ### Basic Pattern: Direct Tool Use
 
 ```python

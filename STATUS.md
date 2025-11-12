@@ -18,6 +18,9 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 - Tool responses surface a `CallToolResult` with mirrored `structuredContent`
   and compact plain-text `TextContent`; set `MCP_BRIDGE_OUTPUT_MODE=toon` to
   emit TOON blocks when desired.
+- Discovery helpers (`discovered_servers()`, `query_tool_docs()`, etc.) are
+  advertised in a short sandbox summary so the LLM fetches tool metadata on
+  demand instead of receiving every schema up front.
 
 **Security Model:**
 - Network disabled (`--network none`)

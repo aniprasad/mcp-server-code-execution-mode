@@ -48,6 +48,12 @@ This bridge implements the **"Code Execution with MCP"** pattern—a revolutiona
 - **Optional TOON** – set `MCP_BRIDGE_OUTPUT_MODE=toon` to emit [Token-Oriented Object Notation](https://github.com/toon-format/toon) blocks. We still drop empty fields and mirror the same structure in `structuredContent`; TOON is handy when you want deterministic tokenisation for downstream prompts.
 - **Fallback JSON** – if the TOON encoder is unavailable we automatically fall back to pretty JSON blocks while preserving the trimmed payload.
 
+### Discovery Workflow
+- `SANDBOX_HELPERS_SUMMARY` in the tool schema only advertises the discovery helpers (`discovered_servers()`, `list_servers()`, `query_tool_docs()`, `search_tool_docs()`, etc.). It never includes individual server or tool documentation.
+- On first use the LLM typically calls `discovered_servers()` to enumerate MPC servers, then `query_tool_docs(server)` or `search_tool_docs("keyword")` to fetch the relevant subset of documentation.
+- Tool metadata is streamed on demand, keeping the system prompt at roughly 200 tokens regardless of how many servers or tools are installed.
+- Once the LLM has the docs it needs, it writes Python that uses the generated `mcp_<alias>` proxies or `mcp.runtime` helpers to invoke tools.
+
 ## Quick Start
 
 ### 1. Prerequisites (macOS or Linux)
@@ -142,6 +148,16 @@ await mcp_github.create_issue(repo='owner/repo', title=data.title)
 │ Sandbox     │
 └─────────────┘
 ```
+
+### Zero-Context Discovery
+
+Unlike traditional MCP servers that preload every tool definition (sometimes 30k+ tokens), this bridge pins its system prompt to roughly 200 tokens and trains the LLM to discover what it needs on demand:
+
+1. LLM calls `discovered_servers()` → learns which bridges are available without loading schemas.
+2. LLM calls `query_tool_docs("serena")` → hydrates just that server's tool docs, optionally filtered per tool.
+3. LLM writes orchestration code → invokes helpers like `mcp_serena.search()` or `mcp.runtime.call_tool()`.
+
+**Result:** context usage stays effectively constant no matter how many MCP servers you configure.
 
 **Process:**
 1. Client calls `run_python(code, servers, timeout)`

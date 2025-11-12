@@ -92,6 +92,12 @@ stdio mediate MCP tool access through the host.
   `CallToolResult` where `structuredContent` carries the full status/IO payload
   (with empty strings/collections dropped). `content[0].text` is rendered as
   compact plain text by default, or as a TOON block when `MCP_BRIDGE_OUTPUT_MODE=toon`.
+
+  The sandbox helper summary embedded in the tool schema only advertises these
+  discovery functions; it never serialises individual server or tool metadata.
+  As a result, the initial system prompt is effectively constant in size and the
+  agent fetches detailed documentation on demand via `discovered_servers()`,
+  `query_tool_docs()`, or `search_tool_docs()`.
 7. Temporary IPC assets are cleaned up and MCP clients remain warm for future
    calls.
 
