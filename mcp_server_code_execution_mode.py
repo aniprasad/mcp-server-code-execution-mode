@@ -63,12 +63,13 @@ _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
 )
 
 SANDBOX_HELPERS_SUMMARY = (
-    "Sandbox helpers: await mcp.runtime.list_servers() (or call list_servers_sync() for the cached view), "
-    "discovered_servers() for all discovered identifiers, await mcp.runtime.list_tools(server) or list_tools_sync(server) for "
-    "cached metadata, await mcp.runtime.query_tool_docs(server, tool=None, detail='summary') or use query_tool_docs_sync(), "
-    "await mcp.runtime.search_tool_docs(query, limit=5, detail='summary') or call search_tool_docs_sync(), plus describe_server(name), "
-    "list_loaded_server_metadata(), capability_summary(). Loaded servers also appear as mcp_<alias> proxies."
+    "Helpers (after `import mcp.runtime as runtime`): await runtime.list_servers() or call runtime.list_servers_sync(), "
+    "runtime.discovered_servers(), runtime.list_tools_sync(server), runtime.query_tool_docs[_sync], "
+    "runtime.search_tool_docs[_sync], runtime.describe_server(name), runtime.list_loaded_server_metadata(), runtime.capability_summary(). "
+    "Loaded servers also expose mcp_<alias> proxies."
 )
+
+_NOISE_STREAM_TOKENS = {"()"}
 
 CAPABILITY_RESOURCE_URI = "resource://mcp-server-code-execution-mode/capabilities"
 _CAPABILITY_RESOURCE_NAME = "code-execution-capabilities"
@@ -82,14 +83,13 @@ _CAPABILITY_RESOURCE_TEXT = textwrap.dedent(
 
     {SANDBOX_HELPERS_SUMMARY}
 
-    ## Using These Capabilities
+    ## Quick usage
 
-    - Load MCP servers explicitly with the `servers` array when calling `run_python` so their proxies are injected as `mcp_<alias>` modules.
-    - Call `runtime.capability_summary()` from inside the sandbox (or read this resource) to remind the model which discovery helpers are available without extra RPC traffic.
-    - Prefer the synchronous helpers (e.g., `list_servers_sync`, `query_tool_docs_sync`) when you just need cached metadata before planning a tool call.
-    - Use `describe_server(name)` or `list_loaded_server_metadata()` to inspect the MCP catalog that was actually mounted for this execution.
+    - Pass `servers=[...]` to mount MCP proxies (`mcp_<alias>` modules).
+    - Import `mcp.runtime as runtime`; `runtime.capability_summary()` repeats this hint.
+    - Prefer the `_sync` helpers first to read cached metadata before issuing RPCs.
 
-    This document is also returned by `listMcpResources` as `{CAPABILITY_RESOURCE_URI}` for clients that prefer the resources API over helper calls.
+    Resource URI: {CAPABILITY_RESOURCE_URI}
     """
 ).strip()
 
@@ -159,6 +159,19 @@ def _split_output_lines(stream: Optional[str]) -> List[str]:
     if not stream:
         return []
     return stream.splitlines()
+
+
+def _filter_stream_lines(lines: Sequence[str]) -> List[str]:
+    """Drop whitespace-only or noise-only lines to save response tokens."""
+
+    filtered: List[str] = []
+    for line in lines:
+        text = str(line)
+        stripped = text.strip()
+        if not stripped or stripped in _NOISE_STREAM_TOKENS:
+            continue
+        filtered.append(text)
+    return filtered
 
 
 def _render_toon_block(payload: Dict[str, object]) -> str:
@@ -268,6 +281,7 @@ def _build_response_payload(
 ) -> Dict[str, object]:
     """Create a structured payload shared by compact/TOON responses."""
 
+    summary_lower = summary.strip().lower()
     payload: Dict[str, object] = {
         "status": status,
         "summary": summary,
@@ -278,11 +292,11 @@ def _build_response_payload(
     if servers:
         payload["servers"] = list(servers)
 
-    stdout_lines = _split_output_lines(stdout)
+    stdout_lines = _filter_stream_lines(_split_output_lines(stdout))
     if stdout_lines:
         payload["stdout"] = stdout_lines
 
-    stderr_lines = _split_output_lines(stderr)
+    stderr_lines = _filter_stream_lines(_split_output_lines(stderr))
     if stderr_lines:
         payload["stderr"] = stderr_lines
 
@@ -290,6 +304,14 @@ def _build_response_payload(
         payload["error"] = error
     if timeout_seconds is not None:
         payload["timeoutSeconds"] = timeout_seconds
+
+    if (
+        status.lower() == "success"
+        and not payload.get("stdout")
+        and not payload.get("stderr")
+        and summary_lower == "success"
+    ):
+        payload["summary"] = "Success (no output)"
 
     return {
         key: value
@@ -579,10 +601,10 @@ class RootlessContainerSandbox:
                     'Raised when an MCP call fails.'
 
                 _CAPABILITY_SUMMARY = (
-                    "Execute Python inside a locked-down container and load MCP servers on demand via the 'servers' "
-                    "argument. Use discovered_servers()/list_servers_sync() to inspect catalogs, fetch docs with "
-                    "query_tool_docs()/search_tool_docs() (or their _sync variants), then call the generated mcp_<alias> "
-                    "helpers to orchestrate tools without inflating the system prompt."
+                    "locked-down Python sandbox; load MCP servers via the 'servers' argument. After `import mcp.runtime as runtime`, "
+                    "use runtime.list_servers_sync()/await runtime.list_servers(), runtime.discovered_servers(), runtime.list_tools_sync(server), "
+                    "runtime.query_tool_docs[_sync], runtime.search_tool_docs[_sync], runtime.describe_server(), runtime.list_loaded_server_metadata(), "
+                    "runtime.capability_summary(). Loaded servers expose mcp_<alias> proxies."
                 )
 
                 _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)

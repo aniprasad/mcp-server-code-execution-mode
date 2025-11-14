@@ -1,4 +1,3 @@
-import os
 import re
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -139,6 +138,25 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(decoded, expected)
         self.assertEqual(response.structuredContent, expected)
+
+    async def test_compact_mode_drops_empty_tuple_output(self) -> None:
+        sample_result = SandboxResult(True, 0, "()\n", "")
+
+        async_mock = AsyncMock(return_value=sample_result)
+        with patch.object(bridge_module.bridge, "execute_code", async_mock):
+            response = await bridge_module.call_tool(
+                "run_python",
+                {"code": "print('noop')"},
+            )
+
+        self.assertFalse(response.isError)
+        self.assertEqual(response.content[0].type, "text")
+        self.assertEqual(response.content[0].text.strip(), "Success (no output)")
+        self.assertNotIn("stdout", response.structuredContent)
+        self.assertNotIn("stderr", response.structuredContent)
+        self.assertNotIn("status", response.structuredContent)
+        self.assertNotIn("exitCode", response.structuredContent)
+        self.assertEqual(response.structuredContent, {"summary": "Success (no output)"})
 
     def test_empty_error_field_is_omitted(self) -> None:
         response = bridge_module._build_tool_response(  # type: ignore[attr-defined]
