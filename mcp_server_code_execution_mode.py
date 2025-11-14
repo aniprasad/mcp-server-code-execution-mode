@@ -65,8 +65,8 @@ _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
 SANDBOX_HELPERS_SUMMARY = (
     "Helpers (after `import mcp.runtime as runtime`): await runtime.list_servers() or call runtime.list_servers_sync(), "
     "runtime.discovered_servers(), runtime.list_tools_sync(server), runtime.query_tool_docs[_sync], "
-    "runtime.search_tool_docs[_sync], runtime.describe_server(name), runtime.list_loaded_server_metadata(), runtime.capability_summary(). "
-    "Loaded servers also expose mcp_<alias> proxies."
+    "runtime.search_tool_docs[_sync], runtime.describe_server(name), runtime.list_loaded_server_metadata(), runtime.capability_summary() "
+    "(prints this digest). Loaded servers also expose mcp_<alias> proxies."
 )
 
 _NOISE_STREAM_TOKENS = {"()"}
@@ -75,7 +75,7 @@ CAPABILITY_RESOURCE_URI = "resource://mcp-server-code-execution-mode/capabilitie
 _CAPABILITY_RESOURCE_NAME = "code-execution-capabilities"
 _CAPABILITY_RESOURCE_TITLE = "Code Execution Sandbox Helpers"
 _CAPABILITY_RESOURCE_DESCRIPTION = (
-    "Capability overview, helper reference, and sandbox usage notes for the code execution MCP server."
+    "Capability overview, helper reference, and sandbox usage notes (call runtime.capability_summary() inside the sandbox for this text)."
 )
 _CAPABILITY_RESOURCE_TEXT = textwrap.dedent(
     f"""
@@ -86,7 +86,7 @@ _CAPABILITY_RESOURCE_TEXT = textwrap.dedent(
     ## Quick usage
 
     - Pass `servers=[...]` to mount MCP proxies (`mcp_<alias>` modules).
-    - Import `mcp.runtime as runtime`; `runtime.capability_summary()` repeats this hint.
+    - Import `mcp.runtime as runtime`; call `runtime.capability_summary()` instead of rereading this resource for the same hint.
     - Prefer the `_sync` helpers first to read cached metadata before issuing RPCs.
 
     Resource URI: {CAPABILITY_RESOURCE_URI}
@@ -1749,7 +1749,7 @@ async def list_tools() -> List[Tool]:
                     "code": {
                         "type": "string",
                         "description": (
-                            "Python source code to execute. "
+                            "Python source code to execute. Call runtime.capability_summary() inside the sandbox for this digest. "
                             f"{SANDBOX_HELPERS_SUMMARY}"
                         ),
                     },
