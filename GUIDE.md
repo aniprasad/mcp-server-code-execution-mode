@@ -275,7 +275,7 @@ The bridge logs discovered servers on startup:
 ### Tool Discovery Flow
 
 1. `SANDBOX_HELPERS_SUMMARY` only reminds the model that discovery helpers exist; it does **not** list servers or tools. The initial system prompt remains ~200 tokens even as catalogs grow.
-2. Typical agent interactions begin with `await mcp.runtime.discovered_servers()` (or `list_servers()`) to see which MCP servers are available for the current run.
+2. Typical agent interactions begin with `await mcp.runtime.discovered_servers()` (or `runtime.list_servers_sync()` when you just need the cached list) to see which MCP servers are available for the current run.
 3. The agent then fetches documentation on demand via `await mcp.runtime.query_tool_docs(server)` or performs fuzzy lookups with `await mcp.runtime.search_tool_docs("keyword")`.
 4. Armed with those results, the agent calls the auto-generated `mcp_<alias>` proxies or `await mcp.runtime.call_tool(...)` inside its Python code.
 
@@ -375,6 +375,7 @@ from mcp import runtime
 
 # See everything the bridge knows about without loading schemas
 print("Discovered:", runtime.discovered_servers())
+print("Cached servers:", runtime.list_servers_sync())
 
 # Metadata for servers already loaded in this run
 print("Loaded metadata:", runtime.list_loaded_server_metadata())
@@ -400,6 +401,7 @@ if loaded:
   )
   print("Summaries:", summaries)
   print("Detailed doc:", detailed)
+  print("Cached tools:", runtime.list_tools_sync(loaded[0]["name"]))
 
 # Keyword search across the servers already loaded in this run
 results = await runtime.search_tool_docs("calendar events", limit=3)

@@ -140,7 +140,7 @@ Result: constant overhead. Whether you manage 10 or 1000 tools, the system promp
 
 ### Discovery Workflow
 - `SANDBOX_HELPERS_SUMMARY` in the tool schema only advertises the discovery helpers (`discovered_servers()`, `list_servers()`, `query_tool_docs()`, `search_tool_docs()`, etc.). It never includes individual server or tool documentation.
-- On first use the LLM typically calls `discovered_servers()` to enumerate MPC servers, then `query_tool_docs(server)` or `search_tool_docs("keyword")` to fetch the relevant subset of documentation.
+- On first use the LLM typically calls `discovered_servers()` (or `list_servers_sync()` for the cached list) to enumerate MCP servers, then `query_tool_docs(server)` or `search_tool_docs("keyword")` to fetch the relevant subset of documentation.
 - Tool metadata is streamed on demand, keeping the system prompt at roughly 200 tokens regardless of how many servers or tools are installed.
 - Once the LLM has the docs it needs, it writes Python that uses the generated `mcp_<alias>` proxies or `mcp.runtime` helpers to invoke tools.
 
@@ -397,6 +397,7 @@ for issue in issues:
 from mcp import runtime
 
 print("Discovered:", runtime.discovered_servers())
+print("Cached servers:", runtime.list_servers_sync())
 print("Loaded metadata:", runtime.list_loaded_server_metadata())
 print("Selectable via RPC:", await runtime.list_servers())
 
@@ -416,6 +417,7 @@ if loaded:
     detail="full",
   )
   print("Summaries:", summaries)
+  print("Cached tools:", runtime.list_tools_sync(loaded[0]["name"]))
   print("Detailed doc:", detailed)
 
 # Fuzzy search across loaded servers without rehydrating every schema

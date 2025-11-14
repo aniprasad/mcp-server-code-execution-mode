@@ -58,8 +58,9 @@ stdio mediate MCP tool access through the host.
   entrypoint into `/ipc`, injects `MCP_AVAILABLE_SERVERS`, and services
   JSON-RPC requests from the sandbox via `handle_rpc`.
 - **Runtime helpers**: The generated entrypoint exposes `mcp.runtime` helpers
-  (`discovered_servers`, `list_servers`, `describe_server`, `list_loaded_server_metadata`)
-  so sandboxed code can enumerate options before loading additional tools.
+  (`discovered_servers`, `list_servers`, `list_servers_sync`, `list_tools_sync`,
+  `describe_server`, `list_loaded_server_metadata`) so sandboxed code can
+  enumerate options before loading additional tools.
 - **Container runtime**: Either `podman` or rootless `docker` must be available
   in the user namespace. Runtime discovery prefers the value from the
   `MCP_BRIDGE_RUNTIME` environment variable.

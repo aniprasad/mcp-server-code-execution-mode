@@ -43,11 +43,23 @@ DEFAULT_CPUS = os.environ.get("MCP_BRIDGE_CPUS")
 CONTAINER_USER = os.environ.get("MCP_BRIDGE_CONTAINER_USER", "65534:65534")
 DEFAULT_RUNTIME_IDLE_TIMEOUT = int(os.environ.get("MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT", "300"))
 
+_PODMAN_PULL_PREFIXES: tuple[str, ...] = (
+    'Resolved "',
+    "Trying to pull",
+    "Getting image source signatures",
+    "Copying blob",
+    "Copying config",
+    "Extracting",
+    "Writing manifest",
+    "Storing signatures",
+)
+
 SANDBOX_HELPERS_SUMMARY = (
-    "Sandbox helpers: await mcp.runtime.list_servers() (returns the servers loaded via the 'servers' argument), "
-    "discovered_servers() for all discovered identifiers, await mcp.runtime.list_tools(server), "
-    "await mcp.runtime.query_tool_docs(server, tool=None, detail='summary'), await mcp.runtime.search_tool_docs(query, limit=5, detail='summary'), "
-    "plus describe_server(name), list_loaded_server_metadata(). Loaded servers also appear as mcp_<alias> proxies."
+    "Sandbox helpers: await mcp.runtime.list_servers() (or call list_servers_sync() for the cached view), "
+    "discovered_servers() for all discovered identifiers, await mcp.runtime.list_tools(server) "
+    "or list_tools_sync(server) for cached metadata, await mcp.runtime.query_tool_docs(server, tool=None, detail='summary'), "
+    "await mcp.runtime.search_tool_docs(query, limit=5, detail='summary'), plus describe_server(name), "
+    "list_loaded_server_metadata(). Loaded servers also appear as mcp_<alias> proxies."
 )
 
 CONFIG_DIRS = [
@@ -524,6 +536,14 @@ class RootlessContainerSandbox:
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
 
+                _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)
+
+                def _lookup_server(name):
+                    for server in AVAILABLE_SERVERS:
+                        if server.get("name") == name:
+                            return server
+                    raise MCPError(f"Server {name!r} is not loaded")
+
                 async def call_tool(server, tool, arguments=None):
                     response = await _rpc_call(
                         {
@@ -554,17 +574,21 @@ class RootlessContainerSandbox:
                         raise MCPError(response.get("error", "MCP request failed"))
                     return tuple(response.get("servers", ()))
 
+                def list_servers_sync():
+                    return tuple(name for name in _LOADED_SERVER_NAMES if name)
+
                 def discovered_servers():
                     return tuple(DISCOVERED_SERVERS)
 
                 def describe_server(name):
-                    for server in AVAILABLE_SERVERS:
-                        if server.get("name") == name:
-                            return server
-                    raise MCPError(f"Server {name!r} is not loaded")
+                    return _lookup_server(name)
 
                 def list_loaded_server_metadata():
                     return tuple(AVAILABLE_SERVERS)
+
+                def list_tools_sync(server):
+                    info = _lookup_server(server)
+                    return tuple(info.get("tools", ()))
 
                 async def query_tool_docs(server, tool=None, detail="summary"):
                     payload = {"type": "query_tool_docs", "server": server}
@@ -595,16 +619,20 @@ class RootlessContainerSandbox:
                 runtime_module.call_tool = call_tool
                 runtime_module.list_tools = list_tools
                 runtime_module.list_servers = list_servers
+                runtime_module.list_servers_sync = list_servers_sync
                 runtime_module.discovered_servers = discovered_servers
                 runtime_module.describe_server = describe_server
                 runtime_module.list_loaded_server_metadata = list_loaded_server_metadata
+                runtime_module.list_tools_sync = list_tools_sync
                 runtime_module.query_tool_docs = query_tool_docs
                 runtime_module.search_tool_docs = search_tool_docs
                 runtime_module.__all__ = [
                     "MCPError",
                     "call_tool",
                     "list_tools",
+                    "list_tools_sync",
                     "list_servers",
+                    "list_servers_sync",
                     "discovered_servers",
                     "describe_server",
                     "list_loaded_server_metadata",
@@ -974,6 +1002,9 @@ class RootlessContainerSandbox:
         stdout_text = "".join(stdout_chunks)
         stderr_text = "".join(stderr_chunks)
 
+        if process.returncode == 0:
+            stderr_text = self._filter_runtime_stderr(stderr_text)
+
         try:
             return SandboxResult(process.returncode == 0, process.returncode, stdout_text, stderr_text)
         finally:
@@ -1032,6 +1063,25 @@ class RootlessContainerSandbox:
             stderr_text.strip() or stdout_bytes.decode(errors="replace").strip(),
         )
         return False
+
+    def _filter_runtime_stderr(self, text: str) -> str:
+        """Strip known runtime pull chatter so successful runs stay quiet."""
+
+        if not text:
+            return text
+
+        runtime_name = os.path.basename(self.runtime).lower()
+        if "podman" not in runtime_name:
+            return text
+
+        filtered_lines: List[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped and any(stripped.startswith(prefix) for prefix in _PODMAN_PULL_PREFIXES):
+                continue
+            filtered_lines.append(line)
+
+        return "\n".join(filtered_lines).strip("\n")
 
 
 def detect_runtime(preferred: Optional[str] = None) -> str:
