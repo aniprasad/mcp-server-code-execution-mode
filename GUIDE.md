@@ -278,6 +278,7 @@ The bridge logs discovered servers on startup:
 2. Typical agent interactions begin with `await mcp.runtime.discovered_servers()` (or `runtime.list_servers_sync()` when you just need the cached list) to see which MCP servers are available for the current run.
 3. The agent then fetches documentation on demand via `await mcp.runtime.query_tool_docs(server)` or performs fuzzy lookups with `await mcp.runtime.search_tool_docs("keyword")`.
 4. Armed with those results, the agent calls the auto-generated `mcp_<alias>` proxies or `await mcp.runtime.call_tool(...)` inside its Python code.
+5. When the user simply asks “what can this MCP do?”, return `runtime.capability_summary()` instead of running exploratory code.
 
 This discovery-first pattern keeps token usage nearly constant while still giving the LLM access to rich tool metadata whenever it needs it.
 
@@ -368,6 +369,19 @@ await mcp_service_c.save(data=processed)
 await mcp_service_d.notify(message='Done')
 ```
 
+### Loading Servers for a Run
+
+Only the MCP servers you request are available inside the sandbox. Include the `servers` array whenever you invoke `run_python` so proxies like `mcp_serena` are generated:
+
+```json
+{
+  "code": "print(await mcp_serena.search(query='latest AI papers'))",
+  "servers": ["serena", "filesystem"]
+}
+```
+
+Without that list the discovery helpers still enumerate the catalog, but RPC calls to unloaded servers return `Server '<name>' is not available`.
+
 ### Pattern: Discover and Select Servers
 
 ```python
@@ -407,6 +421,11 @@ if loaded:
 results = await runtime.search_tool_docs("calendar events", limit=3)
 for result in results:
   print(result["server"], result["tool"], result.get("description", ""))
+
+# Quick answers without awaiting RPC
+print("Capability summary:", runtime.capability_summary())
+print("Cached docs:", runtime.query_tool_docs_sync(loaded[0]["name"]) if loaded else [])
+print("Cached search:", runtime.search_tool_docs_sync("calendar"))
 ```
 
 Typical output for the stub test server:

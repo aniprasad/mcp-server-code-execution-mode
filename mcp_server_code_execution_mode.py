@@ -56,10 +56,10 @@ _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
 
 SANDBOX_HELPERS_SUMMARY = (
     "Sandbox helpers: await mcp.runtime.list_servers() (or call list_servers_sync() for the cached view), "
-    "discovered_servers() for all discovered identifiers, await mcp.runtime.list_tools(server) "
-    "or list_tools_sync(server) for cached metadata, await mcp.runtime.query_tool_docs(server, tool=None, detail='summary'), "
-    "await mcp.runtime.search_tool_docs(query, limit=5, detail='summary'), plus describe_server(name), "
-    "list_loaded_server_metadata(). Loaded servers also appear as mcp_<alias> proxies."
+    "discovered_servers() for all discovered identifiers, await mcp.runtime.list_tools(server) or list_tools_sync(server) for "
+    "cached metadata, await mcp.runtime.query_tool_docs(server, tool=None, detail='summary') or use query_tool_docs_sync(), "
+    "await mcp.runtime.search_tool_docs(query, limit=5, detail='summary') or call search_tool_docs_sync(), plus describe_server(name), "
+    "list_loaded_server_metadata(), capability_summary(). Loaded servers also appear as mcp_<alias> proxies."
 )
 
 CONFIG_DIRS = [
@@ -536,6 +536,13 @@ class RootlessContainerSandbox:
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
 
+                _CAPABILITY_SUMMARY = (
+                    "Execute Python inside a locked-down container and load MCP servers on demand via the 'servers' "
+                    "argument. Use discovered_servers()/list_servers_sync() to inspect catalogs, fetch docs with "
+                    "query_tool_docs()/search_tool_docs() (or their _sync variants), then call the generated mcp_<alias> "
+                    "helpers to orchestrate tools without inflating the system prompt."
+                )
+
                 _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)
 
                 def _lookup_server(name):
@@ -543,6 +550,24 @@ class RootlessContainerSandbox:
                         if server.get("name") == name:
                             return server
                     raise MCPError(f"Server {name!r} is not loaded")
+
+                def _normalise_detail(value):
+                    detail = str(value).lower() if value is not None else "summary"
+                    return detail if detail in {"summary", "full"} else "summary"
+
+                def _format_tool_doc(server_info, tool_info, detail):
+                    doc = {
+                        "server": server_info.get("name"),
+                        "serverAlias": server_info.get("alias"),
+                        "tool": tool_info.get("name"),
+                        "toolAlias": tool_info.get("alias"),
+                    }
+                    description = tool_info.get("description")
+                    if description:
+                        doc["description"] = description
+                    if detail == "full" and tool_info.get("input_schema") is not None:
+                        doc["inputSchema"] = tool_info.get("input_schema")
+                    return doc
 
                 async def call_tool(server, tool, arguments=None):
                     response = await _rpc_call(
@@ -586,9 +611,12 @@ class RootlessContainerSandbox:
                 def list_loaded_server_metadata():
                     return tuple(AVAILABLE_SERVERS)
 
-                def list_tools_sync(server):
+                def list_tools_sync(server=None):
+                    if server is None:
+                        raise MCPError("list_tools_sync(server) requires a server name")
                     info = _lookup_server(server)
-                    return tuple(info.get("tools", ()))
+                    tools = info.get("tools", ()) or ()
+                    return tuple(tools)
 
                 async def query_tool_docs(server, tool=None, detail="summary"):
                     payload = {"type": "query_tool_docs", "server": server}
@@ -615,6 +643,65 @@ class RootlessContainerSandbox:
                         raise MCPError(response.get("error", "MCP request failed"))
                     return response.get("results", [])
 
+                def query_tool_docs_sync(server, tool=None, detail="summary"):
+                    info = _lookup_server(server)
+                    detail_value = _normalise_detail(detail)
+                    tools = info.get("tools", ()) or ()
+                    if tool is None:
+                        return [_format_tool_doc(info, tool_info, detail_value) for tool_info in tools]
+
+                    if not isinstance(tool, str):
+                        raise MCPError("'tool' must be a string when provided")
+                    target = tool.lower()
+                    for candidate in tools:
+                        alias_value = str(candidate.get("alias", "")).lower()
+                        name_value = str(candidate.get("name", "")).lower()
+                        if target in {alias_value, name_value}:
+                            return [_format_tool_doc(info, candidate, detail_value)]
+                    raise MCPError(f"Tool {tool!r} not found for server {server}")
+
+                def search_tool_docs_sync(query, *, limit=5, detail="summary"):
+                    tokens = [token for token in str(query).lower().split() if token]
+                    if not tokens:
+                        return []
+                    detail_value = _normalise_detail(detail)
+                    try:
+                        capped = max(1, min(20, int(limit)))
+                    except Exception:
+                        capped = 5
+                    matches = []
+                    for server_info in AVAILABLE_SERVERS:
+                        tools = server_info.get("tools", ()) or ()
+                        server_keywords = " ".join(
+                            filter(
+                                None,
+                                (
+                                    server_info.get("name"),
+                                    server_info.get("alias"),
+                                ),
+                            )
+                        ).lower()
+                        for tool_info in tools:
+                            haystack = " ".join(
+                                filter(
+                                    None,
+                                    (
+                                        server_keywords,
+                                        tool_info.get("name"),
+                                        tool_info.get("alias"),
+                                        tool_info.get("description"),
+                                    ),
+                                )
+                            ).lower()
+                            if all(token in haystack for token in tokens):
+                                matches.append(_format_tool_doc(server_info, tool_info, detail_value))
+                                if len(matches) >= capped:
+                                    return matches
+                    return matches
+
+                def capability_summary():
+                    return _CAPABILITY_SUMMARY
+
                 runtime_module.MCPError = MCPError
                 runtime_module.call_tool = call_tool
                 runtime_module.list_tools = list_tools
@@ -626,6 +713,9 @@ class RootlessContainerSandbox:
                 runtime_module.list_tools_sync = list_tools_sync
                 runtime_module.query_tool_docs = query_tool_docs
                 runtime_module.search_tool_docs = search_tool_docs
+                runtime_module.query_tool_docs_sync = query_tool_docs_sync
+                runtime_module.search_tool_docs_sync = search_tool_docs_sync
+                runtime_module.capability_summary = capability_summary
                 runtime_module.__all__ = [
                     "MCPError",
                     "call_tool",
@@ -636,8 +726,11 @@ class RootlessContainerSandbox:
                     "discovered_servers",
                     "describe_server",
                     "list_loaded_server_metadata",
+                    "query_tool_docs_sync",
                     "query_tool_docs",
+                    "search_tool_docs_sync",
                     "search_tool_docs",
+                    "capability_summary",
                 ]
 
                 servers_module.__all__ = []

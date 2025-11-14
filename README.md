@@ -140,9 +140,11 @@ Result: constant overhead. Whether you manage 10 or 1000 tools, the system promp
 
 ### Discovery Workflow
 - `SANDBOX_HELPERS_SUMMARY` in the tool schema only advertises the discovery helpers (`discovered_servers()`, `list_servers()`, `query_tool_docs()`, `search_tool_docs()`, etc.). It never includes individual server or tool documentation.
-- On first use the LLM typically calls `discovered_servers()` (or `list_servers_sync()` for the cached list) to enumerate MCP servers, then `query_tool_docs(server)` or `search_tool_docs("keyword")` to fetch the relevant subset of documentation.
+- On first use the LLM typically calls `discovered_servers()` (or `list_servers_sync()` for the cached list) to enumerate MCP servers, then `query_tool_docs(server)` / `query_tool_docs_sync(server)` or `search_tool_docs("keyword")` / `search_tool_docs_sync("keyword")` to fetch the relevant subset of documentation.
 - Tool metadata is streamed on demand, keeping the system prompt at roughly 200 tokens regardless of how many servers or tools are installed.
 - Once the LLM has the docs it needs, it writes Python that uses the generated `mcp_<alias>` proxies or `mcp.runtime` helpers to invoke tools.
+
+**Need a short description without probing the helpers?** Call `runtime.capability_summary()` to print a one-paragraph overview suitable for replying to questions such as “what can the code-execution MCP do?”
 
 ## Quick Start
 
@@ -218,6 +220,19 @@ result = await mcp_filesystem.read_file(path='/tmp/test.txt')
 data = await mcp_search.search(query="TODO")
 await mcp_github.create_issue(repo='owner/repo', title=data.title)
 ```
+
+### Load Servers Explicitly
+
+`run_python` only loads the MCP servers you request. Pass them via the `servers` array when you invoke the tool so proxies such as `mcp_serena` or `mcp_filesystem` become available inside the sandbox:
+
+```json
+{
+  "code": "print(await mcp_serena.search(query='latest AI papers'))",
+  "servers": ["serena", "filesystem"]
+}
+```
+
+If you omit the list the discovery helpers still enumerate everything, but any RPC call that targets an unloaded server returns `Server '<name>' is not available`.
 
 ## Testing
 
@@ -424,6 +439,11 @@ if loaded:
 results = await runtime.search_tool_docs("calendar events", limit=3)
 for result in results:
   print(result["server"], result["tool"], result.get("description", ""))
+
+# Synchronous helpers for quick answers without extra awaits
+print("Capability summary:", runtime.capability_summary())
+print("Docs from cache:", runtime.query_tool_docs_sync(loaded[0]["name"]) if loaded else [])
+print("Search from cache:", runtime.search_tool_docs_sync("calendar"))
 ```
 
 Example output seen by the LLM when running the snippet above with the stub server:
