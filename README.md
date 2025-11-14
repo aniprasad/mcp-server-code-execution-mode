@@ -17,23 +17,23 @@ This bridge implements the **"Code Execution with MCP"** pattern—a revolutiona
 
 ## What This Solves (That Others Don't)
 
-### The Problem: MCP Token Bankruptcy
+### The Pain: MCP Token Bankruptcy
 
-Point a traditional MCP client at 10+ servers and you pay for every tool schema in every prompt—easily 30,000+ tokens before the model writes a single line of code. Scaling catalogs becomes cost-prohibitive and brittle.
+Connect Claude to 11 MCP servers with ~100 tools = **30,000 tokens** of tool schemas loaded into every prompt. That's **$0.09 per query** before you ask a single question. Scale to 50 servers and your context window *breaks*.
 
-### Existing Approaches
+### Why Existing "Solutions" Fail
 
-- **Docker MCP Gateway** – bootstraps third-party servers but still streams every schema into the session.
-- **Cloudflare Code Mode** – V8 isolates with a curated catalog, yet you cannot proxy the MCP servers you already rely on.
-- **Blog posts and papers** – describe discovery-first patterns without a hardened implementation.
-- **Proofs of concept** – demonstrate the idea but skip security, persistence, and proxying edge cases.
+- **Docker MCP Gateway**: Manages containers beautifully, but still streams **all tool schemas** into Claude's context. No token optimization.
+- **Cloudflare Code Mode**: V8 isolates are fast, but you **can't proxy your existing MCP servers** (Serena, Wolfram, custom tools). Platform lock-in.
+- **Academic Papers**: Describe Anthropic's discovery pattern, but provide **no hardened implementation**.
+- **Proofs of Concept**: Skip security (no rootless), skip persistence (cold starts), skip proxying edge cases.
 
-### This Bridge
+### The Fix: Discovery-First Architecture
 
-- Ships a ~200-token helper summary that teaches the LLM to discover metadata on demand rather than preload it.
-- Proxies any stdio MCP server into a rootless, capability-dropped Python sandbox.
-- Mirrors Anthropic's discovery guidance, adds fuzzy search, and keeps responses compact (with optional TOON output).
-- Builds on your existing configs: autodetects Claude, Cursor, Docker MCP gateway, and project-local manifests.
+- **Constant 200-token overhead** regardless of server count
+- **Proxy any stdio MCP server** into rootless containers
+- **Fuzzy search across servers** without preloading schemas
+- **Production-hardened** with capability dropping and security isolation
 
 ### Architecture: How It Differs
 
