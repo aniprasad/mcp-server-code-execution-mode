@@ -454,6 +454,11 @@ Loaded metadata: ({'name': 'stub', 'alias': 'stub', 'tools': [{'name': 'echo', '
 Selectable via RPC: ('stub',)
 ```
 
+Clients that prefer `listMcpResources` can skip executing the helper snippet and instead request the
+`resource://mcp-server-code-execution-mode/capabilities` resource. The server advertises it via
+`resources/list`, and reading it returns the same helper summary plus a short checklist for loading
+servers explicitly.
+
 ## Security
 
 ### Container Constraints

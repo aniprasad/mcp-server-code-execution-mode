@@ -28,7 +28,15 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolResult, TextContent, Tool
+from mcp.shared.exceptions import McpError
+from mcp.types import (
+    INVALID_PARAMS,
+    CallToolResult,
+    ErrorData,
+    Resource,
+    TextContent,
+    Tool,
+)
 
 logger = logging.getLogger("mcp-server-code-execution-mode")
 
@@ -61,6 +69,40 @@ SANDBOX_HELPERS_SUMMARY = (
     "await mcp.runtime.search_tool_docs(query, limit=5, detail='summary') or call search_tool_docs_sync(), plus describe_server(name), "
     "list_loaded_server_metadata(), capability_summary(). Loaded servers also appear as mcp_<alias> proxies."
 )
+
+CAPABILITY_RESOURCE_URI = "resource://mcp-server-code-execution-mode/capabilities"
+_CAPABILITY_RESOURCE_NAME = "code-execution-capabilities"
+_CAPABILITY_RESOURCE_TITLE = "Code Execution Sandbox Helpers"
+_CAPABILITY_RESOURCE_DESCRIPTION = (
+    "Capability overview, helper reference, and sandbox usage notes for the code execution MCP server."
+)
+_CAPABILITY_RESOURCE_TEXT = textwrap.dedent(
+    f"""
+    # Code Execution MCP Capabilities
+
+    {SANDBOX_HELPERS_SUMMARY}
+
+    ## Using These Capabilities
+
+    - Load MCP servers explicitly with the `servers` array when calling `run_python` so their proxies are injected as `mcp_<alias>` modules.
+    - Call `runtime.capability_summary()` from inside the sandbox (or read this resource) to remind the model which discovery helpers are available without extra RPC traffic.
+    - Prefer the synchronous helpers (e.g., `list_servers_sync`, `query_tool_docs_sync`) when you just need cached metadata before planning a tool call.
+    - Use `describe_server(name)` or `list_loaded_server_metadata()` to inspect the MCP catalog that was actually mounted for this execution.
+
+    This document is also returned by `listMcpResources` as `{CAPABILITY_RESOURCE_URI}` for clients that prefer the resources API over helper calls.
+    """
+).strip()
+
+
+def _build_capability_resource() -> Resource:
+    return Resource(
+        name=_CAPABILITY_RESOURCE_NAME,
+        title=_CAPABILITY_RESOURCE_TITLE,
+        description=_CAPABILITY_RESOURCE_DESCRIPTION,
+        uri=CAPABILITY_RESOURCE_URI,  # type: ignore[arg-type]
+        mimeType="text/markdown",
+        size=len(_CAPABILITY_RESOURCE_TEXT.encode("utf-8")),
+    )
 
 CONFIG_DIRS = [
     Path.home() / ".config" / "mcp" / "servers",
@@ -1708,6 +1750,24 @@ async def list_tools() -> List[Tool]:
             },
         )
     ]
+
+
+@app.list_resources()
+async def list_resources() -> List[Resource]:
+    return [_build_capability_resource()]
+
+
+@app.read_resource()
+async def read_resource(uri: str) -> str:
+    uri_str = str(uri)
+    if uri_str != CAPABILITY_RESOURCE_URI:
+        raise McpError(
+            ErrorData(
+                code=INVALID_PARAMS,
+                message=f"Unknown resource: {uri_str}",
+            )
+        )
+    return _CAPABILITY_RESOURCE_TEXT
 
 
 @app.call_tool()
