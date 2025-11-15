@@ -1,5 +1,4 @@
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/elusznik-mcp-server-code-execution-mode-badge.png)](https://mseep.ai/app/elusznik-mcp-server-code-execution-mode)
-[![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/4a84c349-1795-41fc-a299-83d4a29feee8)
 
 # MCP Code Execution Server: Zero-Context Discovery for 100+ MCP Tools
 
@@ -8,6 +7,7 @@
 [![Anthropic Engineering](https://img.shields.io/badge/Anthropic-Engineering-orange)](https://www.anthropic.com/engineering/code-execution-with-mcp)
 [![Cloudflare Blog](https://img.shields.io/badge/Cloudflare-Code_Mode-orange)](https://blog.cloudflare.com/code-mode/)
 [![MCP Protocol](https://img.shields.io/badge/MCP-Documentation-green)](https://modelcontextprotocol.io/)
+[![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/4a84c349-1795-41fc-a299-83d4a29feee8)
 
 ## Overview
 
