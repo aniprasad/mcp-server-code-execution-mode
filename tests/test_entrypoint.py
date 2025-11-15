@@ -19,6 +19,7 @@ class ServerMetadata(TypedDict):
     name: str
     alias: str
     tools: List[ToolMetadata]
+    cwd: str
 
 
 class RuntimeResult(TypedDict):
@@ -45,6 +46,10 @@ def _default_metadata() -> List[ServerMetadata]:
                     "input_schema": {"type": "object", "properties": {}},
                 }
             ],
+            # Optional field that some servers can declare to indicate the working directory
+            # the host will start the server in. Tests may rely on this value to validate
+            # that runtime.describe_server(name) returns the metadata including 'cwd'.
+            "cwd": "/home/demo/projects",
         }
     ]
 
@@ -330,8 +335,21 @@ class EntryPointGenerationTests(unittest.TestCase):
         if runtime_module is not None:
             metadata_tuple = runtime_module.list_loaded_server_metadata()
             self.assertEqual(metadata_tuple[0]["alias"], "demo_server")
+            # The server metadata includes optional 'cwd' if configured
+            self.assertEqual(metadata_tuple[0].get("cwd"), "/home/demo/projects")
             described = runtime_module.describe_server("demo-server")
             self.assertEqual(described["name"], "demo-server")
+            self.assertEqual(described.get("cwd"), "/home/demo/projects")
+
+        def test_runtime_describe_includes_cwd(self) -> None:
+            user_code = (
+                "from mcp import runtime\n"
+                "desc = runtime.describe_server('demo-server')\n"
+                "print('CWD:', desc.get('cwd'))\n"
+            )
+            result = _run_entrypoint(user_code)
+            self.assertEqual(result["stderr"], "")
+            self.assertIn("CWD:", result["stdout"])
 
         query_full_payloads = [
             payload

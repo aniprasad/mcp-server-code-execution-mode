@@ -249,6 +249,7 @@ cat > ~/.config/mcp/servers/git.json << 'EOF'
     "git": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-git", "/path/to/repo"],
+      "cwd": "/home/user/projects/repo",
       "env": {}
     }
   }
@@ -263,6 +264,28 @@ The bridge logs discovered servers on startup:
 ```
 2024-01-01 12:00:00 - INFO - Loaded MCP servers: filesystem, postgres, git
 ```
+
+### Server Working Directory (`cwd`)
+
+- **What it is:** `cwd` is an optional property of the server configuration that tells the bridge which working directory to use when spawning the host process for the MCP server.
+- **Why it matters:** Some servers (like `uvx`-backed servers or file-oriented servers) rely on the working directory to locate project files. Setting `cwd` ensures the server runs in the directory you expect.
+- **How LLMs should discover it:** Agents should call `runtime.describe_server(name)` or inspect `runtime.list_loaded_server_metadata()` to find a `cwd` entry in the returned metadata. If present, your code or the agent can assume the server's working directory.
+
+**Example:** discover server's `cwd` in the sandbox
+
+```python
+from mcp import runtime
+
+desc = runtime.describe_server('serena')
+cdir = desc.get('cwd') or 'bridge-default'
+print('Server cwd:', cdir)
+```
+- **Fallback if missing:** If `cwd` is not present, the host starts the process in the bridge's default working directory (typically where the bridge runs). Agents should avoid assuming a server's working directory if `cwd` is missing.
+- **If the server doesn't accept `cwd` in its JSON:** Older or third-party MCP servers may not have a `cwd` field in their config. This is fine — `cwd` is optional. If your workflow needs a specific directory, configure it on the host (or use `docker run`/`podman run` in the server command to mount the workspace explicitly).
+
+**Note:** LLMs cannot set `cwd` via `run_python`'s `servers` parameter; it is part of your server configuration on the host. If you need a server to run in a particular workspace for a given task, either set `cwd` in the server's host-side configuration or start the server in a container that mounts the workspace path explicitly.
+
+**Tip for operators:** Add `cwd` to your server's configuration to avoid LLMs needing to guess a working directory.
 
 ## Usage Patterns
 

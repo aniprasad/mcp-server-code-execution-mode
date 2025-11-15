@@ -234,6 +234,10 @@ await mcp_github.create_issue(repo='owner/repo', title=data.title)
 
 If you omit the list the discovery helpers still enumerate everything, but any RPC call that targets an unloaded server returns `Server '<name>' is not available`.
 
+Note: The `servers` array only controls which proxies are generated for a sandbox invocation. It does not set server configuration fields such as `cwd`. The `cwd` property is part of the host/server config and LLMs should call `runtime.describe_server(name)` or inspect `runtime.list_loaded_server_metadata()` to discover the configured `cwd` before assuming the server's working directory.
+
+Note: server configurations can include an optional `cwd` property. If present the bridge will start the host MCP server process in that working directory; agents should check `runtime.describe_server(name)` to discover a server's configured `cwd` before making assumptions.
+
 ## Testing
 
 Project environments target CPython 3.14. If your local checkout still pins 3.12 (via `.python-version`), update it before running tests:

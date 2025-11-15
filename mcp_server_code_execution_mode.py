@@ -65,7 +65,7 @@ _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
 SANDBOX_HELPERS_SUMMARY = (
     "Helpers (after `import mcp.runtime as runtime`): await runtime.list_servers() or call runtime.list_servers_sync(), "
     "runtime.discovered_servers(), runtime.list_tools_sync(server), runtime.query_tool_docs[_sync], "
-    "runtime.search_tool_docs[_sync], runtime.describe_server(name), runtime.list_loaded_server_metadata(), runtime.capability_summary() "
+    "runtime.search_tool_docs[_sync], runtime.describe_server(name) (includes 'cwd' if configured), runtime.list_loaded_server_metadata(), runtime.capability_summary() "
     "(prints this digest). Loaded servers also expose mcp_<alias> proxies."
 )
 
@@ -88,6 +88,9 @@ _CAPABILITY_RESOURCE_TEXT = textwrap.dedent(
     - Pass `servers=[...]` to mount MCP proxies (`mcp_<alias>` modules).
     - Import `mcp.runtime as runtime`; call `runtime.capability_summary()` instead of rereading this resource for the same hint.
     - Prefer the `_sync` helpers first to read cached metadata before issuing RPCs.
+        - Server configs support a `cwd` field to start the host MCP server in a specific working directory.
+        - LLMs should check `runtime.describe_server(name)` or `runtime.list_loaded_server_metadata()` for the server's configured `cwd` before assuming the working directory.
+            If `cwd` is absent, the host starts the server in the bridge process' current directory (i.e., the default working directory). If your workload expects a specific working directory, please configure `cwd` in the server config or run the server in a container that mounts the project directory.
 
     Resource URI: {CAPABILITY_RESOURCE_URI}
     """
@@ -151,6 +154,7 @@ class MCPServerInfo:
     command: str
     args: List[str]
     env: Dict[str, str]
+    cwd: Optional[str] = None
 
 
 def _split_output_lines(stream: Optional[str]) -> List[str]:
@@ -383,6 +387,7 @@ class PersistentMCPClient:
             command=self.server_info.command,
             args=self.server_info.args,
             env=self.server_info.env or None,
+            cwd=self.server_info.cwd or None,
         )
 
         client_cm = stdio_client(params)
@@ -1472,7 +1477,11 @@ class MCPBridge:
             env = {}
         str_env = {str(k): str(v) for k, v in env.items()}
         str_args = [str(arg) for arg in args]
-        return MCPServerInfo(name=name, command=command, args=str_args, env=str_env)
+        cwd_raw = raw.get("cwd")
+        cwd_str: Optional[str] = None
+        if isinstance(cwd_raw, (str, Path)):
+            cwd_str = str(cwd_raw)
+        return MCPServerInfo(name=name, command=command, args=str_args, env=str_env, cwd=cwd_str)
 
     async def load_server(self, server_name: str) -> None:
         if server_name in self.loaded_servers:
@@ -1480,6 +1489,15 @@ class MCPBridge:
         info = self.servers.get(server_name)
         if not info:
             raise SandboxError(f"Unknown MCP server: {server_name}")
+
+        # Validate cwd if provided - warn, but do not fail startup
+        if info.cwd:
+            try:
+                path = Path(info.cwd)
+                if not path.exists():
+                    logger.warning("Configured cwd for MCP server %s does not exist: %s", server_name, info.cwd)
+            except Exception:
+                logger.debug("Failed to check cwd for server %s: %s", server_name, info.cwd, exc_info=True)
 
         client = PersistentMCPClient(info)
         await client.start()
@@ -1562,10 +1580,13 @@ class MCPBridge:
             identifier_index[tool_alias.lower()] = doc_entry
             identifier_index[raw_name.lower()] = doc_entry
 
+        server_obj = self.servers.get(server_name)
+        cwd_value = str(server_obj.cwd) if server_obj and getattr(server_obj, "cwd", None) else None
         metadata = {
             "name": server_name,
             "alias": alias,
             "tools": tools,
+            "cwd": cwd_value,
         }
 
         self._server_metadata_cache[server_name] = metadata

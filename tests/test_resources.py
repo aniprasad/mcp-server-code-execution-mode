@@ -25,6 +25,10 @@ class ResourceEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Code Execution MCP Capabilities", body)
         self.assertIn(SANDBOX_HELPERS_SUMMARY, body)
 
+    async def test_read_resource_mentions_cwd(self) -> None:
+        body = await read_resource(CAPABILITY_RESOURCE_URI)
+        self.assertIn("cwd", body)
+
     async def test_read_resource_rejects_unknown_uris(self) -> None:
         with self.assertRaises(McpError):
             await read_resource("resource://mcp-server-code-execution-mode/unknown")
