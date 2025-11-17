@@ -30,14 +30,14 @@ from typing import (
     cast,
 )
 
+from packaging.version import parse as _parse_version
+
 _toon_encode: Optional[Callable[..., str]] = None
 try:  # Prefer the official encoder when available
     import toon_format as _toon_format
     _toon_encode = _toon_format.encode
 except ImportError:  # pragma: no cover - fallback for environments without toon
     _toon_encode = None
-
-from packaging.version import parse as _parse_version
 
 
 def _check_pydantic_compatibility() -> None:
@@ -91,14 +91,14 @@ def _check_pydantic_compatibility() -> None:
 
 _check_pydantic_compatibility()
 
-from mcp.client.session import (
-    ClientSession,  # noqa: E402  (import intentionally delayed for compatibility checks)
+from mcp.client.session import (  # noqa: E402  (import intentionally delayed for compatibility checks)
+    ClientSession,
 )
-from mcp.client.stdio import StdioServerParameters, stdio_client
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.shared.exceptions import McpError
-from mcp.types import (
+from mcp.client.stdio import StdioServerParameters, stdio_client  # noqa: E402
+from mcp.server import Server  # noqa: E402
+from mcp.server.stdio import stdio_server  # noqa: E402
+from mcp.shared.exceptions import McpError  # noqa: E402
+from mcp.types import (  # noqa: E402
     INVALID_PARAMS,
     CallToolResult,
     ErrorData,
