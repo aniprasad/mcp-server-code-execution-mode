@@ -58,6 +58,24 @@ docker pull python:3.14-slim
 podman images python:3.14-slim
 ```
 
+Note on Pydantic compatibility (Python 3.14):
+
+- If you use Python 3.14, ensure you have a modern Pydantic release installed (for example, `pydantic >= 2.12.0`). Some older Pydantic versions or environments that install a separate `typing` package from PyPI may raise errors such as:
+
+```
+TypeError: _eval_type() got an unexpected keyword argument 'prefer_fwd_module'
+```
+
+If you see this error, run:
+
+```bash
+pip install -U pydantic
+pip uninstall typing  # if present; the stdlib's typing should be used
+```
+
+And re-run `uv sync`.
+
+
 ### Setup
 
 #### 1. Install Dependencies

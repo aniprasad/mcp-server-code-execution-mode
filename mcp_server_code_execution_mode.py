@@ -37,7 +37,61 @@ try:  # Prefer the official encoder when available
 except ImportError:  # pragma: no cover - fallback for environments without toon
     _toon_encode = None
 
-from mcp.client.session import ClientSession
+from packaging.version import parse as _parse_version
+
+
+def _check_pydantic_compatibility() -> None:
+    """Check and warn/abort early for Pydantic/typing incompatibilities.
+
+    Some older Pydantic versions (or environments that shadow the stdlib
+    ``typing`` module with a PyPI package) can cause runtime failures when
+    used with CPython 3.14. We try a minimal import and version check and fail
+    with an actionable message to help users upgrade.
+    """
+
+    try:
+        import importlib
+        typing_mod = importlib.import_module("typing")
+        typing_file = getattr(typing_mod, "__file__", "") or "(built-in)"
+    except Exception:  # pragma: no cover - defensive
+        typing_file = "(unknown)"
+
+    try:
+        import pydantic
+        pyd_version = getattr(pydantic, "__version__", "0")
+    except Exception as exc:  # pragma: no cover - this covers TypeError mishaps
+        err_text = str(exc)
+        if "prefer_fwd_module" in err_text or "_eval_type" in err_text:
+            raise RuntimeError(
+                "Pydantic appears incompatible with the current Python/typing\n"
+                "configuration: \n\n"
+                "  - This usually happens if an old version of pydantic is installed\n"
+                "    or if a PyPI-provided 'typing' package is shadowing the standard\n"
+                "    library typing module.\n\n"
+                "Recommended actions:\n"
+                "  1. Upgrade pydantic (e.g. `pip install -U pydantic`).\n"
+                "  2. If you have a 'typing' package installed from PyPI, uninstall it:\n"
+                "     `pip uninstall typing` or `pipx uninstall typing`.\n"
+                "  3. Recreate the virtual environment and re-run `uv sync`.\n\n"
+                "For more info, check the platform and installed packages.\n"
+                f"typing module path: {typing_file}\n"
+                f"pydantic import error: {err_text}\n"
+            ) from exc
+        raise
+
+    try:
+        if _parse_version(pyd_version) < _parse_version("2.12.0") and sys.version_info >= (3, 14):
+            raise RuntimeError(
+                f"Detected pydantic {pyd_version} in a Python 3.14 environment -\n"
+                "please upgrade pydantic to a more recent 2.x release (e.g., `pip install -U pydantic`)."
+            )
+    except Exception:  # pragma: no cover - diagnostic fallback
+        pass
+
+
+_check_pydantic_compatibility()
+
+from mcp.client.session import ClientSession  # noqa: E402  (import intentionally delayed for compatibility checks)
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server import Server
 from mcp.server.stdio import stdio_server

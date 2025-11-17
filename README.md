@@ -154,22 +154,35 @@ Result: constant overhead. Whether you manage 10 or 1000 tools, the system promp
 
 ### 1. Prerequisites (macOS or Linux)
 
-- **Python 3.14**: This project is designed to run on Python 3.14 specifically
   - Check version: `python3 --version`
   - If needed, install Python 3.14 via package manager or [python.org](https://python.org)
-- Install a rootless container runtime (Podman or Docker).
   - macOS: `brew install podman` or `brew install --cask docker`
   - Ubuntu/Debian: `sudo apt-get install -y podman` or `curl -fsSL https://get.docker.com | sh`
-- Install [uv](https://docs.astral.sh/uv/) to manage this project:
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
-- Pull a Python base image once your runtime is ready:
   ```bash
   podman pull python:3.14-slim
   # or
   docker pull python:3.14-slim
   ```
+
+Note on Pydantic compatibility (Python 3.14):
+
+- If you use Python 3.14, ensure you have a modern Pydantic release installed (for example, `pydantic >= 2.12.0`). Some older Pydantic versions or environments that install a separate `typing` package from PyPI may raise errors such as:
+
+```
+TypeError: _eval_type() got an unexpected keyword argument 'prefer_fwd_module'
+```
+
+If you see this error, run:
+
+```bash
+pip install -U pydantic
+pip uninstall typing  # if present; the stdlib's typing should be used
+```
+
+And re-run the project setup (e.g. remove `.venv/` and `uv sync`).
 
 ### 2. Install Dependencies
 
