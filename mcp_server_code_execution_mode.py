@@ -18,8 +18,9 @@ from asyncio import subprocess as aio_subprocess
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Optional, Protocol, Sequence, cast
+from typing import Awaitable, Callable, Dict, List, Optional, Protocol, Sequence, cast, Any
 
+_toon_encode: Optional[Callable[..., str]] = None
 try:  # Prefer the official encoder when available
     import toon_format as _toon_format
     _toon_encode = _toon_format.encode
@@ -122,6 +123,15 @@ CLAUDE_CONFIG_PATHS = [
     Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
     Path.cwd() / "claude_code_config.json",
     Path.cwd() / "claude_desktop_config.json",
+]
+
+# Paths used by OpenCode (similar to Claude). We check these files for mcpServers.
+OPENCODE_CONFIG_PATHS = [
+    Path.home() / ".opencode.json",
+    Path.home() / "Library" / "Application Support" / "OpenCode" / "opencode_config.json",
+    Path.home() / "Library" / "Application Support" / "OpenCode" / "opencode_desktop_config.json",
+    Path.cwd() / "opencode_config.json",
+    Path.cwd() / "opencode_desktop_config.json",
 ]
 
 
@@ -424,7 +434,7 @@ class PersistentMCPClient:
 
     def __init__(self, server_info: MCPServerInfo) -> None:
         self.server_info = server_info
-        self._stdio_cm = None
+        self._stdio_cm: Optional[Any] = None
         self._session: Optional[ClientSession] = None
 
     async def start(self) -> None:
@@ -1502,6 +1512,24 @@ class MCPBridge:
             except Exception as exc:  # pragma: no cover
                 logger.warning("Failed to read %s: %s", config_path, exc)
 
+        # Also check for OpenCode configuration files (opencode JSON) with similar 'mcpServers' entries.
+        for config_path in OPENCODE_CONFIG_PATHS:
+            if not config_path.exists():
+                continue
+            try:
+                with config_path.open() as fh:
+                    config = json.load(fh)
+                for name, value in config.get("mcpServers", {}).items():
+                    # Keep existing precedence: do not override previously discovered servers
+                    if name in self.servers:
+                        continue
+                    info = self._parse_server_config(name, value)
+                    if info:
+                        self.servers[name] = info
+                        logger.info("Found MCP server %s in %s", name, config_path)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to read %s: %s", config_path, exc)
+
         for config_dir in CONFIG_DIRS:
             if not config_dir.exists():
                 continue
@@ -1646,13 +1674,13 @@ class MCPBridge:
             "cwd": cwd_value,
         }
 
-        self._server_metadata_cache[server_name] = metadata
-        self._server_docs_cache[server_name] = {
+        self._server_metadata_cache[server_name] = cast(Dict[str, object], metadata)
+        self._server_docs_cache[server_name] = cast(Dict[str, object], {
             "name": server_name,
             "alias": alias,
             "tools": doc_entries,
             "identifier_index": identifier_index,
-        }
+        })
         self._search_index_dirty = True
 
     async def get_cached_server_metadata(self, server_name: str) -> Dict[str, object]:

@@ -1,5 +1,6 @@
 import re
 import unittest
+from typing import cast
 from unittest.mock import AsyncMock, patch
 
 try:  # pragma: no cover - runtime import with graceful fallback
@@ -37,6 +38,7 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content.type, "text")
         body = _extract_toon_body(content.text)
         decoded = toon_decode(body)
+        self.assertIsInstance(decoded, dict)
         expected = {
             "status": "success",
             "summary": "Success",
@@ -45,7 +47,7 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(decoded, expected)
         self.assertEqual(response.structuredContent, expected)
-        self.assertNotIn("stderr", decoded)
+        self.assertNotIn("stderr", cast(dict, decoded))
 
     async def test_timeout_response_includes_error_details(self) -> None:
         if toon_decode is None:
@@ -69,6 +71,7 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(content.type, "text")
         body = _extract_toon_body(content.text)
         decoded = toon_decode(body)
+        self.assertIsInstance(decoded, dict)
         self.assertEqual(
             decoded,
             {
@@ -127,8 +130,10 @@ class ToonResponseTests(unittest.IsolatedAsyncioTestCase):
         content = response.content[0]
         body = _extract_toon_body(content.text)
         decoded = toon_decode(body)
-        self.assertNotIn("stdout", decoded)
-        self.assertNotIn("stderr", decoded)
+        self.assertIsInstance(decoded, dict)
+        decoded_dict = cast(dict, decoded)
+        self.assertNotIn("stdout", decoded_dict)
+        self.assertNotIn("stderr", decoded_dict)
         self.assertNotIn("stdout", response.structuredContent)
         self.assertNotIn("stderr", response.structuredContent)
         expected = {

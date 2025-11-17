@@ -5,6 +5,7 @@ from io import TextIOWrapper
 import anyio
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
+from typing import Any, cast
 from mcp.types import CallToolResult, TextContent, Tool
 
 app = Server("stub-mcp")
@@ -76,7 +77,7 @@ async def main() -> None:
 
     filtered_stdin = _FilteredAsyncFile(stdin_stream)
 
-    async with stdio_server(stdin=filtered_stdin) as (read_stream, write_stream):
+    async with stdio_server(stdin=cast(Any, filtered_stdin)) as (read_stream, write_stream):
         await app.run(read_stream, write_stream, app.create_initialization_options())
 
 

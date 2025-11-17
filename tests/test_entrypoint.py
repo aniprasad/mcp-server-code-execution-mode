@@ -3,7 +3,7 @@ import json
 import os
 import sys
 import unittest
-from typing import Any, Dict, List, Sequence, TypedDict
+from typing import Any, Dict, List, Sequence, TypedDict, cast
 
 from mcp_server_code_execution_mode import RootlessContainerSandbox
 
@@ -91,7 +91,7 @@ def _run_entrypoint(
     entrypoint = RootlessContainerSandbox._render_entrypoint(
         dummy_sandbox,
         user_code,
-        metadata_list,
+        cast(Sequence[Dict[str, object]], metadata_list),
         [metadata_list[0]["name"]],
     )
 
@@ -184,7 +184,7 @@ def _run_entrypoint(
     demo_module: Any | None = None
 
     try:
-        sys.__stdout__ = fake_stdout  # type: ignore[assignment]
+        sys.__stdout__ = fake_stdout  # type: ignore
         sys.stdin = stdin_wrapper
         exec(entrypoint, namespace)
         sandbox_exports = namespace.get("mcp_servers")  # type: ignore[assignment]
@@ -192,7 +192,7 @@ def _run_entrypoint(
         demo_module = sys.modules.get("mcp.servers.demo_server")
         runtime_module = sys.modules.get("mcp.runtime")
     finally:
-        sys.__stdout__ = original___stdout__  # type: ignore[assignment]
+        sys.__stdout__ = original___stdout__  # type: ignore
         sys.stdin = original_stdin
         sys.stdout = original_stdout
         sys.stderr = original_stderr

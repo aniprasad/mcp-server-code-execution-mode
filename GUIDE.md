@@ -78,11 +78,13 @@ uv run python mcp_server_code_execution_mode.py
 
 This starts the MCP server. If no errors occur, the installation is successful.
 
+
 #### 3. Register with MCP Client
 
-**Claude Code:**
+**Claude Code & OpenCode:**
 
-Create `~/.config/mcp/servers/mcp-server-code-execution-mode.json`:
+Create `~/.config/mcp/servers/mcp-server-code-execution-mode.json` or place equivalent
+configuration under OpenCode's config file (e.g. `~/.opencode.json`):
 
 ```json
 {
@@ -205,6 +207,13 @@ The bridge auto-discovers MCP servers from:
 3. **Local Config**
   - `./claude_code_config.json`
   - `./claude_desktop_config.json` *(legacy fallback)*
+
+  1b. **OpenCode Config**
+    - `~/.opencode.json`
+    - `~/Library/Application Support/OpenCode/opencode_config.json`
+    - `~/Library/Application Support/OpenCode/opencode_desktop_config.json` *(legacy fallback)*
+    - `./opencode_config.json`
+    - `./opencode_desktop_config.json` *(legacy fallback)*
 
 ### Example: Filesystem Server
 

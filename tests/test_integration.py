@@ -8,7 +8,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, Optional, Sequence, cast
+from typing import Awaitable, Callable, Dict, Optional, Sequence, cast, ClassVar, List
 
 import mcp_server_code_execution_mode as bridge_module
 from mcp_server_code_execution_mode import SandboxError, SandboxResult, SandboxTimeout
@@ -107,15 +107,20 @@ class InProcessSandbox:
 
 
 class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    _original_config_dirs: ClassVar[List[Path]] = []
+    _original_claude_paths: ClassVar[List[Path]] = []
+    _original_opencode_paths: ClassVar[List[Path]] = []
     @classmethod
     def setUpClass(cls) -> None:
         cls._original_config_dirs = list(bridge_module.CONFIG_DIRS)
         cls._original_claude_paths = list(bridge_module.CLAUDE_CONFIG_PATHS)
+        cls._original_opencode_paths = list(getattr(bridge_module, "OPENCODE_CONFIG_PATHS", []))
 
     @classmethod
     def tearDownClass(cls) -> None:
         bridge_module.CONFIG_DIRS[:] = cls._original_config_dirs
         bridge_module.CLAUDE_CONFIG_PATHS[:] = cls._original_claude_paths
+        bridge_module.OPENCODE_CONFIG_PATHS[:] = cls._original_opencode_paths
 
     async def asyncSetUp(self) -> None:
         self._config_dir = tempfile.TemporaryDirectory()
@@ -124,6 +129,7 @@ class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
         os.environ["MCP_BRIDGE_STATE_DIR"] = self._state_dir.name
         bridge_module.CONFIG_DIRS[:] = [Path(self._config_dir.name)]
         bridge_module.CLAUDE_CONFIG_PATHS[:] = []
+        bridge_module.OPENCODE_CONFIG_PATHS[:] = []
 
         stub_path = Path(__file__).resolve().parent / "stub_mcp_server.py"
         config = {
@@ -189,6 +195,23 @@ class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
         if client:
             client_obj = cast(bridge_module.ClientLike, client)
             await client_obj.stop()
+
+    async def test_discover_opencode_config_file(self) -> None:
+        opencode_path = Path(self._config_dir.name, "opencode_config.json")
+        config = {
+            "mcpServers": {
+                "opencode-server": {
+                    "command": sys.executable,
+                    "args": [],
+                    "env": {},
+                }
+            }
+        }
+        Path(self._config_dir.name, "opencode_config.json").write_text(json.dumps(config))
+        # Make the bridge read our opencode config file explicitly
+        bridge_module.OPENCODE_CONFIG_PATHS[:] = [opencode_path]
+        await self.bridge.discover_servers()
+        self.assertIn("opencode-server", self.bridge.servers)
 
 
 if __name__ == "__main__":

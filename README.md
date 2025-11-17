@@ -217,6 +217,31 @@ uv run python mcp_server_code_execution_mode.py
 
 **Restart Claude Code**
 
+### 4b. Register with OpenCode
+
+If you use OpenCode, add the same MCP server entry to one of the OpenCode configuration files, for example `~/.opencode.json` or `~/Library/Application Support/OpenCode/opencode_config.json`.
+
+```json
+{
+  "mcpServers": {
+    "mcp-server-code-execution-mode": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/elusznik/mcp-server-code-execution-mode",
+        "mcp-server-code-execution-mode",
+        "run"
+      ],
+      "env": {
+        "MCP_BRIDGE_RUNTIME": "podman"
+      }
+    }
+  }
+}
+```
+
+**Restart OpenCode**
+
 ### 5. Execute Code
 
 ```python
