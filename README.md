@@ -7,17 +7,34 @@
 [![Anthropic Engineering](https://img.shields.io/badge/Anthropic-Engineering-orange)](https://www.anthropic.com/engineering/code-execution-with-mcp)
 [![Cloudflare Blog](https://img.shields.io/badge/Cloudflare-Code_Mode-orange)](https://blog.cloudflare.com/code-mode/)
 [![Docker MCP Gateway](https://img.shields.io/badge/Docker-MCP_Gateway-blue)](https://www.docker.com/blog/dynamic-mcps-stop-hardcoding-your-agents-world/)
+[![Apple Machine Learning](https://img.shields.io/badge/Apple_Machine_Learning-CodeAct?logo=apple&style=flat-square)](https://machinelearning.apple.com/research/codeact)
 [![MCP Protocol](https://img.shields.io/badge/MCP-Documentation-green)](https://modelcontextprotocol.io/)
 [![Verified on MseeP](https://mseep.ai/badge.svg)](https://mseep.ai/app/4a84c349-1795-41fc-a299-83d4a29feee8)
 
 ## Overview
 
-This bridge implements the **"Code Execution with MCP"** pattern—a revolutionary approach to using Model Context Protocol tools. Instead of exposing all MCP tools directly to Claude (consuming massive context), the bridge:
+This bridge implements the **"Code Execution with MCP"** pattern, a convergence of ideas from industry leaders:
 
-1. **Auto-discovers** configured MCP servers
-2. **Proxies tools** into sandboxed code execution
-3. **Eliminates context overhead** (95%+ reduction)
-4. **Enables complex workflows** through Python code
+*   **Apple's [CodeAct](https://machinelearning.apple.com/research/codeact)**: "Your LLM Agent Acts Better when Generating Code."
+*   **Anthropic's [Code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp)**: "Building more efficient agents."
+*   **Cloudflare's [Code Mode](https://blog.cloudflare.com/code-mode/)**: "LLMs are better at writing code to call MCP, than at calling MCP directly."
+*   **Docker's [Dynamic MCPs](https://www.docker.com/blog/dynamic-mcps-stop-hardcoding-your-agents-world/)**: "Stop Hardcoding Your Agents’ World."
+
+Instead of exposing hundreds of individual tools to the LLM (which consumes massive context and confuses the model), this bridge exposes **one** tool: `run_python`. The LLM writes Python code to discover, call, and compose other tools.
+
+### Why This vs. JS "Code Mode"?
+
+While there are JavaScript-based alternatives (like [`universal-tool-calling-protocol/code-mode`](https://github.com/universal-tool-calling-protocol/code-mode)), this project is built for **Data Science** and **Security**:
+
+| Feature | This Project (Python) | JS Code Mode (Node.js) |
+| :--- | :--- | :--- |
+| **Native Language** | **Python** (The language of AI/ML) | TypeScript/JavaScript |
+| **Data Science** | **Native** (`pandas`, `numpy`, `scikit-learn`) | Impossible / Hacky |
+| **Isolation** | **Hard** (Podman/Docker Containers) | Soft (Node.js VM) |
+| **Security** | **Enterprise** (Rootless, No Net, Read-Only) | Process-level |
+| **Philosophy** | **Infrastructure** (Standalone Bridge) | Library (Embeddable) |
+
+**Choose this if:** You want your agent to analyze data, generate charts, use scientific libraries, or if you require strict container-based isolation for running untrusted code.
 
 ## What This Solves (That Others Don't)
 
@@ -551,6 +568,7 @@ servers explicitly.
 - [Code Mode (Cloudflare)](https://blog.cloudflare.com/code-mode/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Dynamic MCPs with Docker](https://www.docker.com/blog/dynamic-mcps-stop-hardcoding-your-agents-world/)
+- [CodeAct: Your LLM Agent Acts Better when Generating Code (Apple)](https://machinelearning.apple.com/research/codeact)
 
 ## Status
 
