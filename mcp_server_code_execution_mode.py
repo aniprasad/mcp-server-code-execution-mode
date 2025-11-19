@@ -35,6 +35,7 @@ from packaging.version import parse as _parse_version
 _toon_encode: Optional[Callable[..., str]] = None
 try:  # Prefer the official encoder when available
     import toon_format as _toon_format
+
     _toon_encode = _toon_format.encode
 except ImportError:  # pragma: no cover - fallback for environments without toon
     _toon_encode = None
@@ -51,6 +52,7 @@ def _check_pydantic_compatibility() -> None:
 
     try:
         import importlib
+
         typing_mod = importlib.import_module("typing")
         typing_file = getattr(typing_mod, "__file__", "") or "(built-in)"
     except Exception:  # pragma: no cover - defensive
@@ -58,6 +60,7 @@ def _check_pydantic_compatibility() -> None:
 
     try:
         import pydantic
+
         pyd_version = getattr(pydantic, "__version__", "0")
     except Exception as exc:  # pragma: no cover - this covers TypeError mishaps
         err_text = str(exc)
@@ -80,7 +83,9 @@ def _check_pydantic_compatibility() -> None:
         raise
 
     try:
-        if _parse_version(pyd_version) < _parse_version("2.12.0") and sys.version_info >= (3, 14):
+        if _parse_version(pyd_version) < _parse_version(
+            "2.12.0"
+        ) and sys.version_info >= (3, 14):
             raise RuntimeError(
                 f"Detected pydantic {pyd_version} in a Python 3.14 environment -\n"
                 "please upgrade pydantic to a more recent 2.x release (e.g., `pip install -U pydantic`)."
@@ -118,7 +123,9 @@ DEFAULT_MEMORY = os.environ.get("MCP_BRIDGE_MEMORY", "512m")
 DEFAULT_PIDS = int(os.environ.get("MCP_BRIDGE_PIDS", "128"))
 DEFAULT_CPUS = os.environ.get("MCP_BRIDGE_CPUS")
 CONTAINER_USER = os.environ.get("MCP_BRIDGE_CONTAINER_USER", "65534:65534")
-DEFAULT_RUNTIME_IDLE_TIMEOUT = int(os.environ.get("MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT", "300"))
+DEFAULT_RUNTIME_IDLE_TIMEOUT = int(
+    os.environ.get("MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT", "300")
+)
 
 _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
     'Resolved "',
@@ -143,9 +150,7 @@ _NOISE_STREAM_TOKENS = {"()"}
 CAPABILITY_RESOURCE_URI = "resource://mcp-server-code-execution-mode/capabilities"
 _CAPABILITY_RESOURCE_NAME = "code-execution-capabilities"
 _CAPABILITY_RESOURCE_TITLE = "Code Execution Sandbox Helpers"
-_CAPABILITY_RESOURCE_DESCRIPTION = (
-    "Capability overview, helper reference, and sandbox usage notes (call runtime.capability_summary() inside the sandbox for this text)."
-)
+_CAPABILITY_RESOURCE_DESCRIPTION = "Capability overview, helper reference, and sandbox usage notes (call runtime.capability_summary() inside the sandbox for this text)."
 _CAPABILITY_RESOURCE_TEXT = textwrap.dedent(
     f"""
     # Code Execution MCP Capabilities
@@ -176,6 +181,7 @@ def _build_capability_resource() -> Resource:
         size=len(_CAPABILITY_RESOURCE_TEXT.encode("utf-8")),
     )
 
+
 CONFIG_DIRS = [
     Path.home() / ".config" / "mcp" / "servers",
     Path.home() / "Library" / "Application Support" / "Claude Code" / "mcp" / "servers",
@@ -184,9 +190,21 @@ CONFIG_DIRS = [
 ]
 CLAUDE_CONFIG_PATHS = [
     Path.home() / ".claude.json",
-    Path.home() / "Library" / "Application Support" / "Claude Code" / "claude_code_config.json",
-    Path.home() / "Library" / "Application Support" / "Claude" / "claude_code_config.json",
-    Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "Claude Code"
+    / "claude_code_config.json",
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "Claude"
+    / "claude_code_config.json",
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "Claude"
+    / "claude_desktop_config.json",
     Path.cwd() / "claude_code_config.json",
     Path.cwd() / "claude_desktop_config.json",
 ]
@@ -194,8 +212,16 @@ CLAUDE_CONFIG_PATHS = [
 # Paths used by OpenCode (similar to Claude). We check these files for mcpServers.
 OPENCODE_CONFIG_PATHS = [
     Path.home() / ".opencode.json",
-    Path.home() / "Library" / "Application Support" / "OpenCode" / "opencode_config.json",
-    Path.home() / "Library" / "Application Support" / "OpenCode" / "opencode_desktop_config.json",
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "OpenCode"
+    / "opencode_config.json",
+    Path.home()
+    / "Library"
+    / "Application Support"
+    / "OpenCode"
+    / "opencode_desktop_config.json",
     Path.cwd() / "opencode_config.json",
     Path.cwd() / "opencode_desktop_config.json",
 ]
@@ -211,10 +237,14 @@ class SandboxError(RuntimeError):
 
 
 class ClientLike(Protocol):
-    async def list_tools(self) -> List[Dict[str, object]]:  # pragma: no cover - typing only
+    async def list_tools(
+        self,
+    ) -> List[Dict[str, object]]:  # pragma: no cover - typing only
         ...
 
-    async def call_tool(self, name: str, arguments: Dict[str, object]) -> Dict[str, object]:  # pragma: no cover - typing only
+    async def call_tool(
+        self, name: str, arguments: Dict[str, object]
+    ) -> Dict[str, object]:  # pragma: no cover - typing only
         ...
 
     async def stop(self) -> None:  # pragma: no cover - typing only
@@ -222,10 +252,14 @@ class ClientLike(Protocol):
 
 
 class SandboxLike(Protocol):
-    async def execute(self, code: str, **kwargs) -> SandboxResult:  # pragma: no cover - typing only
+    async def execute(
+        self, code: str, **kwargs
+    ) -> SandboxResult:  # pragma: no cover - typing only
         ...
 
-    async def ensure_shared_directory(self, path: Path) -> None:  # pragma: no cover - typing only
+    async def ensure_shared_directory(
+        self, path: Path
+    ) -> None:  # pragma: no cover - typing only
         ...
 
 
@@ -374,7 +408,9 @@ def _build_compact_structured_payload(payload: Dict[str, object]) -> Dict[str, o
     if summary and (status.lower() != "success" or not compact.get("stdout")):
         compact["summary"] = summary
 
-    return compact or {key: payload[key] for key in ("status", "summary") if key in payload}
+    return compact or {
+        key: payload[key] for key in ("status", "summary") if key in payload
+    }
 
 
 def _build_response_payload(
@@ -422,11 +458,7 @@ def _build_response_payload(
     ):
         payload["summary"] = "Success (no output)"
 
-    return {
-        key: value
-        for key, value in payload.items()
-        if not _is_empty_field(value)
-    }
+    return {key: value for key, value in payload.items() if not _is_empty_field(value)}
 
 
 def _is_empty_field(value: object) -> bool:
@@ -528,9 +560,13 @@ class PersistentMCPClient:
             raise SandboxError("MCP client not started")
 
         result = await self._session.list_tools()
-        return [tool.model_dump(by_alias=True, exclude_none=True) for tool in result.tools]
+        return [
+            tool.model_dump(by_alias=True, exclude_none=True) for tool in result.tools
+        ]
 
-    async def call_tool(self, name: str, arguments: Dict[str, object]) -> Dict[str, object]:
+    async def call_tool(
+        self, name: str, arguments: Dict[str, object]
+    ) -> Dict[str, object]:
         if not self._session:
             raise SandboxError("MCP client not started")
 
@@ -633,10 +669,12 @@ class RootlessContainerSandbox:
             import traceback
             import types
             from contextlib import suppress
+            from pathlib import Path
 
             AVAILABLE_SERVERS = json.loads(__METADATA_JSON__)
             DISCOVERED_SERVERS = json.loads(__DISCOVERED_JSON__)
             CODE = __CODE_LITERAL__
+            USER_TOOLS_PATH = Path("/projects/user_tools.py")
 
             _PENDING_RESPONSES = {}
             _REQUEST_COUNTER = 0
@@ -726,11 +764,50 @@ class RootlessContainerSandbox:
                 mcp_pkg.runtime = runtime_module
                 mcp_pkg.servers = servers_module
 
+                # Load user tools if they exist
+                if USER_TOOLS_PATH.exists():
+                    try:
+                        import importlib.util
+                        spec = importlib.util.spec_from_file_location("user_tools", USER_TOOLS_PATH)
+                        if spec and spec.loader:
+                            user_tools = importlib.util.module_from_spec(spec)
+                            sys.modules["user_tools"] = user_tools
+                            spec.loader.exec_module(user_tools)
+                            # Export everything from user_tools to global namespace
+                            for name, val in vars(user_tools).items():
+                                if not name.startswith("_"):
+                                    globals()[name] = val
+                    except Exception:
+                        # We silently ignore errors during tool loading to not break startup
+                        pass
+
+                def save_tool(func):
+                    '''Saves a function as a persistent tool available in future sessions.'''
+                    if not inspect.isfunction(func):
+                        raise ValueError("save_tool expects a function")
+                    
+                    source = inspect.getsource(func)
+                    # Ensure the file exists
+                    USER_TOOLS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Append to file
+                    with open(USER_TOOLS_PATH, "a") as f:
+                        f.write("\\n\\n")
+                        f.write(source)
+                    
+                    return f"Tool '{func.__name__}' saved. It will be available in future sessions."
+
+                # Expose save_tool to runtime
+                runtime_module.save_tool = save_tool
+                globals()["save_tool"] = save_tool
+
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
 
                 _CAPABILITY_SUMMARY = (
-                    "locked-down Python sandbox; load MCP servers via the 'servers' argument. After `import mcp.runtime as runtime`, "
+                    "locked-down Python sandbox; load MCP servers via the 'servers' argument. "
+                    "YOU CAN DEFINE NEW TOOLS: Write a Python function and call `save_tool(func)` to persist it. "
+                    "After `import mcp.runtime as runtime`, "
                     "use runtime.list_servers_sync()/await runtime.list_servers(), runtime.discovered_servers(), runtime.list_tools_sync(server), "
                     "runtime.query_tool_docs[_sync], runtime.search_tool_docs[_sync], runtime.describe_server(), runtime.list_loaded_server_metadata(), "
                     "runtime.capability_summary(). Loaded servers expose mcp_<alias> proxies."
@@ -1068,7 +1145,9 @@ class RootlessContainerSandbox:
         if "podman" not in runtime_name:
             return
 
-        code, stdout_text, stderr_text = await self._run_runtime_command("machine", "stop")
+        code, stdout_text, stderr_text = await self._run_runtime_command(
+            "machine", "stop"
+        )
         if code != 0:
             combined = f"{stdout_text}\n{stderr_text}".lower()
             if "already stopped" in combined or "is not running" in combined:
@@ -1134,13 +1213,24 @@ class RootlessContainerSandbox:
                         stderr=stderr_text,
                     )
 
-                start_code, start_stdout, start_stderr = await self._run_runtime_command("machine", "start")
+                (
+                    start_code,
+                    start_stdout,
+                    start_stderr,
+                ) = await self._run_runtime_command("machine", "start")
                 if start_code == 0:
                     continue
 
                 start_combined = f"{start_stdout}\n{start_stderr}".lower()
-                if "does not exist" in start_combined or "no such machine" in start_combined:
-                    init_code, init_stdout, init_stderr = await self._run_runtime_command("machine", "init")
+                if (
+                    "does not exist" in start_combined
+                    or "no such machine" in start_combined
+                ):
+                    (
+                        init_code,
+                        init_stdout,
+                        init_stderr,
+                    ) = await self._run_runtime_command("machine", "init")
                     if init_code != 0:
                         raise SandboxError(
                             "Failed to initialize Podman machine",
@@ -1172,14 +1262,18 @@ class RootlessContainerSandbox:
         container_env: Optional[Dict[str, str]] = None,
         volume_mounts: Optional[Sequence[str]] = None,
         host_dir: Optional[Path] = None,
-        rpc_handler: Optional[Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]] = None,
+        rpc_handler: Optional[
+            Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]
+        ] = None,
     ) -> SandboxResult:
         await self._ensure_runtime_ready()
         if host_dir is None:
             raise SandboxError("Sandbox host directory is not available")
 
         entrypoint_path = host_dir / "entrypoint.py"
-        entrypoint_path.write_text(self._render_entrypoint(code, servers_metadata, discovered_servers))
+        entrypoint_path.write_text(
+            self._render_entrypoint(code, servers_metadata, discovered_servers)
+        )
         entrypoint_target = f"/ipc/{entrypoint_path.name}"
 
         stdout_chunks: List[str] = []
@@ -1223,11 +1317,16 @@ class RootlessContainerSandbox:
                     if process.stdin is None:
                         continue
                     if rpc_handler is None:
-                        response: Dict[str, object] = {"success": False, "error": "RPC handler unavailable"}
+                        response: Dict[str, object] = {
+                            "success": False,
+                            "error": "RPC handler unavailable",
+                        }
                     else:
                         try:
                             payload = message.get("payload", {})
-                            response = await rpc_handler(payload if isinstance(payload, dict) else {})
+                            response = await rpc_handler(
+                                payload if isinstance(payload, dict) else {}
+                            )
                         except Exception as exc:
                             logger.debug("RPC handler failed", exc_info=True)
                             response = {"success": False, "error": str(exc)}
@@ -1240,7 +1339,10 @@ class RootlessContainerSandbox:
                     if not reply["success"]:
                         reply["error"] = response.get("error", "RPC error")
                     try:
-                        data = json.dumps(reply, separators=(",", ":")).encode("utf-8") + b"\n"
+                        data = (
+                            json.dumps(reply, separators=(",", ":")).encode("utf-8")
+                            + b"\n"
+                        )
                         process.stdin.write(data)
                         await process.stdin.drain()
                     except Exception:
@@ -1333,7 +1435,9 @@ class RootlessContainerSandbox:
                 stderr=aio_subprocess.PIPE,
             )
         except FileNotFoundError:
-            logger.debug("Podman binary not found while ensuring volume share for %s", path)
+            logger.debug(
+                "Podman binary not found while ensuring volume share for %s", path
+            )
             return False
 
         stdout_bytes, stderr_bytes = await process.communicate()
@@ -1366,7 +1470,9 @@ class RootlessContainerSandbox:
         filtered_lines: List[str] = []
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped and any(stripped.startswith(prefix) for prefix in _PODMAN_PULL_PREFIXES):
+            if stripped and any(
+                stripped.startswith(prefix) for prefix in _PODMAN_PULL_PREFIXES
+            ):
                 continue
             filtered_lines.append(line)
 
@@ -1413,27 +1519,36 @@ class SandboxInvocation:
             metadata = await self.bridge.get_cached_server_metadata(server_name)
             self.server_metadata.append(metadata)
         self.allowed_servers = {
-            str(meta.get("name")) for meta in self.server_metadata if isinstance(meta.get("name"), str)
+            str(meta.get("name"))
+            for meta in self.server_metadata
+            if isinstance(meta.get("name"), str)
         }
         self.discovered_servers = sorted(self.bridge.servers.keys())
         state_dir_env = os.environ.get("MCP_BRIDGE_STATE_DIR")
         if state_dir_env:
             base_dir = Path(state_dir_env).expanduser()
         else:
-            base_dir = Path.cwd() / ".mcp-bridge"
+            base_dir = Path.home() / "MCPs"
         base_dir = base_dir.resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create user_tools directory
+        user_tools_dir = base_dir / "user_tools"
+        user_tools_dir.mkdir(parents=True, exist_ok=True)
 
         ensure_share = getattr(self.bridge.sandbox, "ensure_shared_directory", None)
         if ensure_share:
             await ensure_share(base_dir)
 
-        self._temp_dir = tempfile.TemporaryDirectory(prefix="mcp-bridge-ipc-", dir=str(base_dir))
+        self._temp_dir = tempfile.TemporaryDirectory(
+            prefix="mcp-bridge-ipc-", dir=str(base_dir)
+        )
         host_dir = Path(self._temp_dir.name)
         os.chmod(host_dir, 0o755)
         self.host_dir = host_dir
 
         self.volume_mounts.append(f"{host_dir}:/ipc:rw")
+        self.volume_mounts.append(f"{user_tools_dir}:/projects:rw")
 
         self.container_env["MCP_AVAILABLE_SERVERS"] = json.dumps(
             self.server_metadata,
@@ -1615,7 +1730,9 @@ class MCPBridge:
 
         logger.info("Discovered %d MCP servers", len(self.servers))
 
-    def _parse_server_config(self, name: str, raw: Dict[str, object]) -> Optional[MCPServerInfo]:
+    def _parse_server_config(
+        self, name: str, raw: Dict[str, object]
+    ) -> Optional[MCPServerInfo]:
         command = raw.get("command")
         if not isinstance(command, str):
             return None
@@ -1631,7 +1748,9 @@ class MCPBridge:
         cwd_str: Optional[str] = None
         if isinstance(cwd_raw, (str, Path)):
             cwd_str = str(cwd_raw)
-        return MCPServerInfo(name=name, command=command, args=str_args, env=str_env, cwd=cwd_str)
+        return MCPServerInfo(
+            name=name, command=command, args=str_args, env=str_env, cwd=cwd_str
+        )
 
     async def load_server(self, server_name: str) -> None:
         if server_name in self.loaded_servers:
@@ -1645,9 +1764,18 @@ class MCPBridge:
             try:
                 path = Path(info.cwd)
                 if not path.exists():
-                    logger.warning("Configured cwd for MCP server %s does not exist: %s", server_name, info.cwd)
+                    logger.warning(
+                        "Configured cwd for MCP server %s does not exist: %s",
+                        server_name,
+                        info.cwd,
+                    )
             except Exception:
-                logger.debug("Failed to check cwd for server %s: %s", server_name, info.cwd, exc_info=True)
+                logger.debug(
+                    "Failed to check cwd for server %s: %s",
+                    server_name,
+                    info.cwd,
+                    exc_info=True,
+                )
 
         client = PersistentMCPClient(info)
         await client.start()
@@ -1732,7 +1860,11 @@ class MCPBridge:
             identifier_index[raw_name.lower()] = doc_entry
 
         server_obj = self.servers.get(server_name)
-        cwd_value = str(server_obj.cwd) if server_obj and getattr(server_obj, "cwd", None) else None
+        cwd_value = (
+            str(server_obj.cwd)
+            if server_obj and getattr(server_obj, "cwd", None)
+            else None
+        )
         metadata = {
             "name": server_name,
             "alias": alias,
@@ -1741,12 +1873,15 @@ class MCPBridge:
         }
 
         self._server_metadata_cache[server_name] = cast(Dict[str, object], metadata)
-        self._server_docs_cache[server_name] = cast(Dict[str, object], {
-            "name": server_name,
-            "alias": alias,
-            "tools": doc_entries,
-            "identifier_index": identifier_index,
-        })
+        self._server_docs_cache[server_name] = cast(
+            Dict[str, object],
+            {
+                "name": server_name,
+                "alias": alias,
+                "tools": doc_entries,
+                "identifier_index": identifier_index,
+            },
+        )
         self._search_index_dirty = True
 
     async def get_cached_server_metadata(self, server_name: str) -> Dict[str, object]:
@@ -1804,7 +1939,14 @@ class MCPBridge:
             match = identifier_map.get(tool.lower())
             if not match:
                 raise SandboxError(f"Tool {tool!r} not found for server {server_name}")
-            docs.append(self._format_tool_doc(server_name, server_alias, cast(Dict[str, object], match), detail_value))
+            docs.append(
+                self._format_tool_doc(
+                    server_name,
+                    server_alias,
+                    cast(Dict[str, object], match),
+                    detail_value,
+                )
+            )
             return docs
 
         tools_raw = cache_entry.get("tools", [])
@@ -1812,7 +1954,9 @@ class MCPBridge:
             tools_raw = []
         for info_raw in tools_raw:
             info = cast(Dict[str, object], info_raw)
-            docs.append(self._format_tool_doc(server_name, server_alias, info, detail_value))
+            docs.append(
+                self._format_tool_doc(server_name, server_alias, info, detail_value)
+            )
         return docs
 
     def _ensure_search_index(self) -> None:

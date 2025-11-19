@@ -380,7 +380,7 @@ Unlike traditional MCP servers that preload every tool definition (sometimes 30k
 | `MCP_BRIDGE_CPUS` | - | CPU limit |
 | `MCP_BRIDGE_CONTAINER_USER` | 65534:65534 | Run as UID:GID |
 | `MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT` | 300s | Shutdown delay |
-| `MCP_BRIDGE_STATE_DIR` | `./.mcp-bridge` | Host directory for IPC sockets and temp state |
+| `MCP_BRIDGE_STATE_DIR` | `~/MCPs` | Host directory for IPC sockets and temp state |
 | `MCP_BRIDGE_OUTPUT_MODE` | `compact` | Response text format (`compact` or `toon`) |
 | `MCP_BRIDGE_LOG_LEVEL` | `INFO` | Bridge logging verbosity |
 
@@ -419,10 +419,10 @@ When you rely on `docker mcp gateway run` to expose third-party MCP servers, the
 
 ### State Directory & Volume Sharing
 
-- Runtime artifacts (including the generated `/ipc/entrypoint.py` and related handshake metadata) live under `./.mcp-bridge/` by default. Set `MCP_BRIDGE_STATE_DIR` to relocate them.
+- Runtime artifacts (including the generated `/ipc/entrypoint.py` and related handshake metadata) live under `~/MCPs/` by default. Set `MCP_BRIDGE_STATE_DIR` to relocate them.
 - When the selected runtime is Podman, the bridge automatically issues `podman machine set --rootful --now --volume <state_dir>:<state_dir>` so the VM can mount the directory.
 - Docker Desktop does not expose a CLI for file sharing; ensure the chosen state directory is marked as shared in Docker Desktop → Settings → Resources → File Sharing before running the bridge.
-- To verify a share manually, run `docker run --rm -v $PWD/.mcp-bridge:/ipc alpine ls /ipc` (or the Podman equivalent) and confirm the files are visible.
+- To verify a share manually, run `docker run --rm -v ~/MCPs:/ipc alpine ls /ipc` (or the Podman equivalent) and confirm the files are visible.
 
 ## Usage Examples
 
