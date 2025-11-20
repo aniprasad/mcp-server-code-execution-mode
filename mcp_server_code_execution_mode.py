@@ -137,7 +137,9 @@ CONTAINER_USER = os.environ.get("MCP_BRIDGE_CONTAINER_USER", "65534:65534")
 DEFAULT_RUNTIME_IDLE_TIMEOUT = int(
     os.environ.get("MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT", "300")
 )
-_ALLOW_SELF_SERVER = os.environ.get("MCP_BRIDGE_ALLOW_SELF_SERVER", "0").strip().lower() in {
+_ALLOW_SELF_SERVER = os.environ.get(
+    "MCP_BRIDGE_ALLOW_SELF_SERVER", "0"
+).strip().lower() in {
     "1",
     "true",
     "yes",
@@ -1663,7 +1665,10 @@ class RootlessContainerSandbox:
         if "already exists" in lower or "would overwrite" in lower:
             return True
 
-        if "unknown flag: --volume" in lower or "unrecognized option '--volume'" in lower:
+        if (
+            "unknown flag: --volume" in lower
+            or "unrecognized option '--volume'" in lower
+        ):
             if await self._podman_share_already_available(path):
                 logger.info(
                     "Podman runtime already exposes %s; skipping --volume configuration",
@@ -1991,9 +1996,7 @@ class MCPBridge:
                     )
                     continue
                 self.servers[name] = info
-                logger.info(
-                    "Found MCP server %s in %s (%s)", name, path, source_name
-                )
+                logger.info("Found MCP server %s in %s (%s)", name, path, source_name)
         except Exception as exc:
             logger.warning("Failed to read %s: %s", path, exc)
 
@@ -2504,9 +2507,27 @@ async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
 
 
 async def main() -> None:
-    logging.basicConfig(level=os.environ.get("MCP_BRIDGE_LOG_LEVEL", "INFO"))
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(read_stream, write_stream, app.create_initialization_options())
+    # DEBUG LOGGING
+    import logging
+
+    logging.basicConfig(
+        filename="/tmp/mcp_debug.log",
+        level=logging.DEBUG,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
+    logging.info("Starting MCP Server Code Execution Mode...")
+
+    try:
+        logging.info("Initializing stdio server...")
+        async with stdio_server() as (read_stream, write_stream):
+            logging.info("Running app...")
+            await app.run(
+                read_stream, write_stream, app.create_initialization_options()
+            )
+            logging.info("App run finished.")
+    except Exception:
+        logging.exception("Fatal error in main loop")
+        raise
 
 
 if __name__ == "__main__":
