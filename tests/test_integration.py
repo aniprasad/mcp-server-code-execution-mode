@@ -1,14 +1,19 @@
 import asyncio
 import json
+import logging
 import os
 import sys
 import tempfile
 import traceback
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import asynccontextmanager, redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from typing import Awaitable, Callable, ClassVar, Dict, List, Optional, Sequence, cast
+from unittest import mock
+
+import anyio
+import mcp.types as mcp_types
 
 import mcp_server_code_execution_mode as bridge_module
 from mcp_server_code_execution_mode import SandboxError, SandboxResult, SandboxTimeout
@@ -227,6 +232,67 @@ class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         await self.bridge.discover_servers()
         self.assertIn("opencode-server", self.bridge.servers)
+
+    async def test_blank_line_parse_exception_is_ignored(self) -> None:
+        # Write a server config for a server that will send a blank-line parse exception
+
+        broken_config = {
+            "mcpServers": {
+                "broken": {
+                    "command": sys.executable,
+                    "args": [],
+                    "env": {},
+                }
+            }
+        }
+        Path(self._config_dir.name, "broken_server.json").write_text(
+            json.dumps(broken_config)
+        )
+
+        @asynccontextmanager
+        async def fake_stdio_client(server, errlog=None):
+            # Create memory streams
+            # Use a single-slot buffer so the send below doesn't block before the
+            # consumer attaches (zero-buffer streams deadlock during __aenter__).
+            read_send, read_recv = anyio.create_memory_object_stream(1)
+            write_send, write_recv = anyio.create_memory_object_stream(1)
+
+            # Simulate a JSON parse exception for a blank newline as produced by pydantic
+            exc = Exception(
+                "1 validation error for JSONRPCMessage\n  Invalid JSON: EOF while parsing a value at line 2 column 0 [type=json_invalid, input_value='\\n', input_type=str]"
+            )
+            await read_send.send(exc)
+
+            try:
+                yield read_recv, write_send
+            finally:
+                await read_send.aclose()
+                await write_send.aclose()
+
+        # Dummy initializer to bypass actual init sequence
+        class DummyInitResult:
+            protocolVersion = mcp_types.LATEST_PROTOCOL_VERSION
+            capabilities = mcp_types.ServerCapabilities()
+
+        async def fake_init(self):
+            return DummyInitResult()
+
+        with mock.patch.object(bridge_module, "stdio_client", fake_stdio_client):
+            with mock.patch.object(bridge_module.ClientSession, "initialize", fake_init):
+                # Capture server-side logs for 'mcp.server.lowlevel.server'
+                log_stream = StringIO()
+                handler = logging.StreamHandler(log_stream)
+                server_logger = logging.getLogger("mcp.server.lowlevel.server")
+                server_logger.addHandler(handler)
+                try:
+                    await self.bridge.discover_servers()
+                    await self.bridge.load_server("broken")
+                finally:
+                    server_logger.removeHandler(handler)
+
+                logs = log_stream.getvalue()
+                self.assertNotIn("Received exception from stream", logs)
+                self.assertNotIn("Internal Server Error", logs)
 
 
 if __name__ == "__main__":

@@ -17,6 +17,8 @@ try:
     import tomllib
 except ImportError:
     tomllib = None
+import inspect
+import io
 import tempfile
 import textwrap
 from asyncio import subprocess as aio_subprocess
@@ -37,6 +39,7 @@ from typing import (
     cast,
 )
 
+import anyio
 from packaging.version import parse as _parse_version
 
 _toon_encode: Optional[Callable[..., str]] = None
@@ -625,6 +628,8 @@ class PersistentMCPClient:
         self.server_info = server_info
         self._stdio_cm: Optional[Any] = None
         self._session: Optional[ClientSession] = None
+        self._forward_task: Optional[asyncio.Task[None]] = None
+        self._captured_stderr: Optional[io.TextIOBase] = None
 
     async def start(self) -> None:
         if self._session:
@@ -637,13 +642,58 @@ class PersistentMCPClient:
             cwd=self.server_info.cwd or None,
         )
 
-        client_cm = stdio_client(params)
+        # Capture stderr in a real file object for cross-platform compatibility
+        self._captured_stderr = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+        # Only pass errlog if stdio_client supports it (tests may patch stdio_client)
+        if "errlog" in inspect.signature(stdio_client).parameters:
+            client_cm = stdio_client(params, errlog=self._captured_stderr)
+        else:
+            client_cm = stdio_client(params)
         self._stdio_cm = client_cm
-        read_stream, write_stream = await client_cm.__aenter__()
+        raw_read_stream, write_stream = await client_cm.__aenter__()
 
-        session = ClientSession(read_stream, write_stream)
+        # Create a filtered reader stream to hide benign XML/blank-line JSON parse errors
+        filtered_writer, filtered_read = anyio.create_memory_object_stream(0)
+
+        async def _forward_read() -> None:
+            try:
+                async with filtered_writer:
+                    async for item in raw_read_stream:
+                        # Filter out JSON parse errors that are likely caused by stray blank lines
+                        if isinstance(item, Exception):
+                            message = str(item)
+                            if (
+                                "Invalid JSON" in message
+                                and "EOF while parsing a value" in message
+                                and "input_value='\\n'" in message
+                            ):
+                                # ignore blank line parse errors
+                                continue
+                        await filtered_writer.send(item)
+            except anyio.ClosedResourceError:
+                await anyio.lowlevel.checkpoint()
+
+        # Launch the forwarder task
+        self._forward_task = asyncio.create_task(_forward_read())
+
+        session = ClientSession(filtered_read, write_stream)
         await session.__aenter__()
-        await session.initialize()
+        try:
+            await session.initialize()
+        except Exception as exc:  # pragma: no cover - initialization failure reporting
+            # Read captured stderr content for diagnostics if present
+            stderr_text = ""
+            if self._captured_stderr is not None:
+                try:
+                    self._captured_stderr.seek(0)
+                    stderr_text = self._captured_stderr.read()
+                except Exception:
+                    stderr_text = "<failed to read captured stderr>"
+            logger.debug(
+                "Client session failed to initialize: %s (stderr=%s)", exc, stderr_text
+            )
+            # Re-raise for callers to handle; captured stderr is useful for debugging
+            raise
         self._session = session
 
     async def list_tools(self) -> List[Dict[str, object]]:
@@ -679,6 +729,19 @@ class PersistentMCPClient:
                 logger.debug("MCP stdio shutdown raised %s", exc, exc_info=True)
             finally:
                 self._stdio_cm = None
+        # Ensure the forwarder task is cancelled
+        if self._forward_task:
+            task = self._forward_task
+            self._forward_task = None
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        if self._captured_stderr is not None:
+            try:
+                self._captured_stderr.close()
+            except Exception:
+                pass
+            self._captured_stderr = None
 
 
 class RootlessContainerSandbox:
@@ -2184,6 +2247,40 @@ class MCPBridge:
 
 bridge = MCPBridge()
 app = Server(BRIDGE_NAME)
+
+
+# Monkey-patch MCP server _handle_message to ignore benign JSON parse exceptions
+try:
+    from mcp.server.lowlevel.server import Server as LowLevelServer
+
+    _orig_handle_message = LowLevelServer._handle_message
+
+    async def _patched_handle_message(
+        self,
+        message,
+        session,
+        lifespan_context,
+        raise_exceptions: bool = False,
+    ):
+        # Ignore parse exceptions produced by pydantic when a blank newline is sent
+        try:
+            if isinstance(message, Exception):
+                txt = str(message)
+                if (
+                    "Invalid JSON: EOF while parsing a value" in txt
+                    and "input_value='\\n'" in txt
+                ):
+                    return
+        except Exception:
+            pass
+        return await _orig_handle_message(
+            self, message, session, lifespan_context, raise_exceptions
+        )
+
+    LowLevelServer._handle_message = _patched_handle_message
+except Exception:
+    # If the library structure changes or import fails, don't hard-fail; just skip the monkey-patch.
+    pass
 
 
 @app.list_tools()
