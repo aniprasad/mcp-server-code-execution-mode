@@ -25,7 +25,9 @@ class InProcessSandbox:
         container_env: Optional[Dict[str, str]] = None,
         volume_mounts: Optional[Sequence[str]] = None,
         host_dir: Optional[Path] = None,
-        rpc_handler: Optional[Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]] = None,
+        rpc_handler: Optional[
+            Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]
+        ] = None,
     ) -> SandboxResult:
         async def _rpc_call(payload: Dict[str, object]) -> Dict[str, object]:
             if not isinstance(payload, dict):
@@ -45,7 +47,9 @@ class InProcessSandbox:
                 self._tools = {str(tool["alias"]): tool for tool in tools}
 
             async def list_tools(self):
-                response = await _rpc_call({"type": "list_tools", "server": self._server_name})
+                response = await _rpc_call(
+                    {"type": "list_tools", "server": self._server_name}
+                )
                 if not response.get("success"):
                     raise RuntimeError(response.get("error", "Failed to list tools"))
                 return response.get("tools", [])
@@ -69,8 +73,12 @@ class InProcessSandbox:
 
                 return _invoke
 
-        alias_map = {str(server["name"]): str(server["alias"]) for server in servers_metadata}
-        mcp_servers = {str(server["name"]): _MCPProxy(server) for server in servers_metadata}
+        alias_map = {
+            str(server["name"]): str(server["alias"]) for server in servers_metadata
+        }
+        mcp_servers = {
+            str(server["name"]): _MCPProxy(server) for server in servers_metadata
+        }
 
         namespace = {"__name__": "__sandbox__", "mcp_servers": mcp_servers}
         for server_name, proxy in mcp_servers.items():
@@ -100,36 +108,37 @@ class InProcessSandbox:
             ) from exc
         except SystemExit as exc:  # pragma: no cover - mirrors container behaviour
             code_val = exc.code if isinstance(exc.code, int) else 1
-            return SandboxResult(code_val == 0, code_val, stdout_buf.getvalue(), stderr_buf.getvalue())
+            return SandboxResult(
+                code_val == 0, code_val, stdout_buf.getvalue(), stderr_buf.getvalue()
+            )
         except Exception:  # pragma: no cover - diagnostic parity with container path
             traceback.print_exc(file=stderr_buf)
             return SandboxResult(False, 1, stdout_buf.getvalue(), stderr_buf.getvalue())
 
 
 class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
-    _original_config_dirs: ClassVar[List[Path]] = []
-    _original_claude_paths: ClassVar[List[Path]] = []
-    _original_opencode_paths: ClassVar[List[Path]] = []
+    _original_config_sources: ClassVar[List[object]] = []
+
     @classmethod
     def setUpClass(cls) -> None:
-        cls._original_config_dirs = list(bridge_module.CONFIG_DIRS)
-        cls._original_claude_paths = list(bridge_module.CLAUDE_CONFIG_PATHS)
-        cls._original_opencode_paths = list(getattr(bridge_module, "OPENCODE_CONFIG_PATHS", []))
+        cls._original_config_sources = list(bridge_module.CONFIG_SOURCES)
 
     @classmethod
     def tearDownClass(cls) -> None:
-        bridge_module.CONFIG_DIRS[:] = cls._original_config_dirs
-        bridge_module.CLAUDE_CONFIG_PATHS[:] = cls._original_claude_paths
-        bridge_module.OPENCODE_CONFIG_PATHS[:] = cls._original_opencode_paths
+        bridge_module.CONFIG_SOURCES[:] = cls._original_config_sources
 
     async def asyncSetUp(self) -> None:
         self._config_dir = tempfile.TemporaryDirectory()
         self._state_dir = tempfile.TemporaryDirectory()
         self._original_state_dir = os.environ.get("MCP_BRIDGE_STATE_DIR")
         os.environ["MCP_BRIDGE_STATE_DIR"] = self._state_dir.name
-        bridge_module.CONFIG_DIRS[:] = [Path(self._config_dir.name)]
-        bridge_module.CLAUDE_CONFIG_PATHS[:] = []
-        bridge_module.OPENCODE_CONFIG_PATHS[:] = []
+
+        # Set up a single directory source for the test
+        from mcp_server_code_execution_mode import ConfigSource
+
+        bridge_module.CONFIG_SOURCES[:] = [
+            ConfigSource(Path(self._config_dir.name), "directory", name="Test Dir")
+        ]
 
         stub_path = Path(__file__).resolve().parent / "stub_mcp_server.py"
         config = {
@@ -141,9 +150,7 @@ class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         }
-        Path(self._config_dir.name, "stub_server.json").write_text(
-            json.dumps(config)
-        )
+        Path(self._config_dir.name, "stub_server.json").write_text(json.dumps(config))
 
         self.bridge = bridge_module.MCPBridge(sandbox=InProcessSandbox())
 
@@ -207,9 +214,17 @@ class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         }
-        Path(self._config_dir.name, "opencode_config.json").write_text(json.dumps(config))
-        # Make the bridge read our opencode config file explicitly
-        bridge_module.OPENCODE_CONFIG_PATHS[:] = [opencode_path]
+        Path(self._config_dir.name, "opencode_config.json").write_text(
+            json.dumps(config)
+        )
+
+        # Add the explicit file source
+        from mcp_server_code_execution_mode import ConfigSource
+
+        bridge_module.CONFIG_SOURCES.append(
+            ConfigSource(opencode_path, "file", name="OpenCode Test")
+        )
+
         await self.bridge.discover_servers()
         self.assertIn("opencode-server", self.bridge.servers)
 

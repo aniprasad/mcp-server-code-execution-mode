@@ -54,7 +54,9 @@ def _default_metadata() -> List[ServerMetadata]:
     ]
 
 
-def _select_tool_metadata(server_info: ServerMetadata, target: str | None) -> ToolMetadata:
+def _select_tool_metadata(
+    server_info: ServerMetadata, target: str | None
+) -> ToolMetadata:
     tools = server_info["tools"]
     if not tools:
         raise AssertionError("Server metadata must include at least one tool")
@@ -66,7 +68,9 @@ def _select_tool_metadata(server_info: ServerMetadata, target: str | None) -> To
     return tools[0]
 
 
-def _format_doc(server_info: ServerMetadata, tool_spec: ToolMetadata, detail: str) -> Dict[str, object]:
+def _format_doc(
+    server_info: ServerMetadata, tool_spec: ToolMetadata, detail: str
+) -> Dict[str, object]:
     doc: Dict[str, object] = {
         "server": server_info["name"],
         "serverAlias": server_info["alias"],
@@ -119,7 +123,9 @@ def _run_entrypoint(
         }
         if not response["success"]:
             response["error"] = payload.get("error", "RPC error")
-        writer.write(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+        writer.write(
+            json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n"
+        )
         writer.flush()
 
     class _StdoutCapture:
@@ -148,21 +154,34 @@ def _run_entrypoint(
                     if req_type == "call_tool":
                         _send_response(message_id, {"success": True, "result": ["ok"]})
                     elif req_type == "list_tools":
-                        _send_response(message_id, {"success": True, "tools": server_info["tools"]})
+                        _send_response(
+                            message_id, {"success": True, "tools": server_info["tools"]}
+                        )
                     elif req_type == "list_servers":
-                        _send_response(message_id, {"success": True, "servers": [server_info["name"]]})
+                        _send_response(
+                            message_id,
+                            {"success": True, "servers": [server_info["name"]]},
+                        )
                     elif req_type == "query_tool_docs":
                         detail = str(payload.get("detail", "summary")).lower()
                         if "tool" in payload and payload.get("tool") is not None:
-                            selected = _select_tool_metadata(server_info, str(payload.get("tool")))
+                            selected = _select_tool_metadata(
+                                server_info, str(payload.get("tool"))
+                            )
                             docs = [_format_doc(server_info, selected, detail)]
                         else:
-                            docs = [_format_doc(server_info, spec, detail) for spec in server_info["tools"]]
+                            docs = [
+                                _format_doc(server_info, spec, detail)
+                                for spec in server_info["tools"]
+                            ]
                         _send_response(message_id, {"success": True, "docs": docs})
                     elif req_type == "search_tool_docs":
                         detail = str(payload.get("detail", "summary")).lower()
                         limit = payload.get("limit")
-                        tools = [_format_doc(server_info, spec, detail) for spec in server_info["tools"]]
+                        tools = [
+                            _format_doc(server_info, spec, detail)
+                            for spec in server_info["tools"]
+                        ]
                         if isinstance(limit, int) and limit > 0:
                             tools = tools[:limit]
                         _send_response(message_id, {"success": True, "results": tools})
@@ -227,7 +246,9 @@ class EntryPointGenerationTests(unittest.TestCase):
 
         result = _run_entrypoint(user_code)
 
-        self.assertTrue(any(call.get("type") == "rpc_request" for call in result["calls"]))
+        self.assertTrue(
+            any(call.get("type") == "rpc_request" for call in result["calls"])
+        )
         self.assertEqual(result["stdout"], "")
         self.assertEqual(result["stderr"], "")
         self.assertIsInstance(result["sandbox_exports"], dict)
@@ -283,7 +304,9 @@ class EntryPointGenerationTests(unittest.TestCase):
             list_tools_sync = getattr(runtime_module, "list_tools_sync", None)
             self.assertIsNotNone(list_tools_sync)
             if list_tools_sync is not None:
-                tool_aliases = [tool["alias"] for tool in list_tools_sync("demo-server")]
+                tool_aliases = [
+                    tool["alias"] for tool in list_tools_sync("demo-server")
+                ]
                 self.assertEqual(tool_aliases, ["list_things"])
             query_sync = getattr(runtime_module, "query_tool_docs_sync", None)
             self.assertIsNotNone(query_sync)
@@ -296,7 +319,7 @@ class EntryPointGenerationTests(unittest.TestCase):
             summary_fn = getattr(runtime_module, "capability_summary", None)
             self.assertIsNotNone(summary_fn)
             if summary_fn is not None:
-                self.assertIn("locked-down", summary_fn())
+                self.assertIn("PYTHON SANDBOX MANUAL", summary_fn())
 
         rpc_types = [payload.get("type") for payload in result["rpc_payloads"]]
         self.assertIn("query_tool_docs", rpc_types)
@@ -354,7 +377,8 @@ class EntryPointGenerationTests(unittest.TestCase):
         query_full_payloads = [
             payload
             for payload in result["rpc_payloads"]
-            if payload.get("type") == "query_tool_docs" and payload.get("detail") == "full"
+            if payload.get("type") == "query_tool_docs"
+            and payload.get("detail") == "full"
         ]
         self.assertTrue(query_full_payloads)
         self.assertEqual(query_full_payloads[0].get("tool"), "list_things")
@@ -362,10 +386,14 @@ class EntryPointGenerationTests(unittest.TestCase):
         search_full_payloads = [
             payload
             for payload in result["rpc_payloads"]
-            if payload.get("type") == "search_tool_docs" and payload.get("detail") == "full"
+            if payload.get("type") == "search_tool_docs"
+            and payload.get("detail") == "full"
         ]
         self.assertTrue(search_full_payloads)
-        self.assertTrue(all(payload.get("limit") == 1 for payload in search_full_payloads))
+        self.assertTrue(
+            all(payload.get("limit") == 1 for payload in search_full_payloads)
+        )
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

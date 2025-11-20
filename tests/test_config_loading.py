@@ -30,10 +30,13 @@ def test_discover_servers_vscode_global(mock_bridge, tmp_path):
     settings_file = tmp_path / "settings.json"
     settings_file.write_text(json.dumps(settings_content))
 
-    # Patch the VSCODE_GLOBAL_CONFIG_PATHS to point to our mock file
-    with patch(
-        "mcp_server_code_execution_mode.VSCODE_GLOBAL_CONFIG_PATHS", [settings_file]
-    ):
+    # Create a mock ConfigSource
+    from mcp_server_code_execution_mode import ConfigSource
+
+    mock_sources = [ConfigSource(settings_file, "file", name="VS Code Global")]
+
+    # Patch CONFIG_SOURCES
+    with patch("mcp_server_code_execution_mode.CONFIG_SOURCES", mock_sources):
         # Run discovery
         import asyncio
 
@@ -59,10 +62,13 @@ def test_discover_servers_antigravity(mock_bridge, tmp_path):
     settings_file = tmp_path / "settings.json"
     settings_file.write_text(json.dumps(settings_content))
 
-    # Patch the ANTIGRAVITY_CONFIG_PATHS to point to our mock file
-    with patch(
-        "mcp_server_code_execution_mode.ANTIGRAVITY_CONFIG_PATHS", [settings_file]
-    ):
+    # Create a mock ConfigSource
+    from mcp_server_code_execution_mode import ConfigSource
+
+    mock_sources = [ConfigSource(settings_file, "file", name="Antigravity IDE")]
+
+    # Patch CONFIG_SOURCES
+    with patch("mcp_server_code_execution_mode.CONFIG_SOURCES", mock_sources):
         # Run discovery
         import asyncio
 
@@ -94,10 +100,13 @@ def test_discover_servers_precedence(mock_bridge, tmp_path):
     settings_file = tmp_path / "settings.json"
     settings_file.write_text(json.dumps(settings_content))
 
-    # Patch ANTIGRAVITY_CONFIG_PATHS
-    with patch(
-        "mcp_server_code_execution_mode.ANTIGRAVITY_CONFIG_PATHS", [settings_file]
-    ):
+    # Create a mock ConfigSource
+    from mcp_server_code_execution_mode import ConfigSource
+
+    mock_sources = [ConfigSource(settings_file, "file", name="Test Config")]
+
+    # Patch CONFIG_SOURCES
+    with patch("mcp_server_code_execution_mode.CONFIG_SOURCES", mock_sources):
         import asyncio
 
         asyncio.run(mock_bridge.discover_servers())

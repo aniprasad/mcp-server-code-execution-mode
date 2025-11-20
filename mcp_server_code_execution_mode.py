@@ -29,6 +29,8 @@ from typing import (
     Callable,
     Dict,
     List,
+    Literal,
+    NamedTuple,
     Optional,
     Protocol,
     Sequence,
@@ -188,79 +190,131 @@ def _build_capability_resource() -> Resource:
     )
 
 
-CONFIG_DIRS = [
-    Path.home() / ".config" / "mcp" / "servers",
-    Path.home() / "Library" / "Application Support" / "Claude Code" / "mcp" / "servers",
-    Path.home() / "Library" / "Application Support" / "Claude" / "mcp" / "servers",
-    Path.home() / "MCPs",
-    Path.cwd() / "mcp-servers",
-]
-CLAUDE_CONFIG_PATHS = [
-    Path.home() / ".claude.json",
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude Code"
-    / "claude_code_config.json",
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude"
-    / "claude_code_config.json",
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude"
-    / "claude_desktop_config.json",
-    Path.cwd() / "claude_code_config.json",
-    Path.cwd() / "claude_desktop_config.json",
-]
+class ConfigSource(NamedTuple):
+    path: Path
+    type: Literal["file", "directory"]
+    format: Literal["json", "toml"] = "json"
+    name: str = "Unknown"
 
-# Paths used by OpenCode (similar to Claude). We check these files for mcpServers.
-OPENCODE_CONFIG_PATHS = [
-    Path.home() / ".opencode.json",
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "OpenCode"
-    / "opencode_config.json",
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "OpenCode"
-    / "opencode_desktop_config.json",
-    Path.cwd() / "opencode_config.json",
-    Path.cwd() / "opencode_desktop_config.json",
-]
 
-GEMINI_CONFIG_PATHS = [
-    Path.home() / ".gemini" / "settings.json",
-]
-
-CODEX_CONFIG_PATHS = [
-    Path.home() / ".codex" / "config.toml",
-]
-
-CURSOR_CONFIG_PATHS = [
-    Path.home() / ".cursor" / "mcp.json",
-]
-
-WINDSURF_CONFIG_PATHS = [
-    Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
-]
-
-VSCODE_CONFIG_PATHS = [
-    Path.cwd() / ".vscode" / "mcp.json",
-]
-
-VSCODE_GLOBAL_CONFIG_PATHS = [
-    Path.home() / "Library" / "Application Support" / "Code" / "User" / "settings.json",
-    Path.home() / ".config" / "Code" / "User" / "settings.json",
-]
-
-ANTIGRAVITY_CONFIG_PATHS = [
-    Path.home() / ".antigravity" / "settings.json",
-    Path.home() / ".antigravity" / "mcp.json",
+CONFIG_SOURCES = [
+    # Directories (scan for *.json)
+    ConfigSource(
+        Path.home() / ".config" / "mcp" / "servers", "directory", name="Standard MCP"
+    ),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Claude Code"
+        / "mcp"
+        / "servers",
+        "directory",
+        name="Claude Code",
+    ),
+    ConfigSource(
+        Path.home() / "Library" / "Application Support" / "Claude" / "mcp" / "servers",
+        "directory",
+        name="Claude Desktop",
+    ),
+    ConfigSource(Path.home() / "MCPs", "directory", name="User MCPs"),
+    ConfigSource(Path.cwd() / "mcp-servers", "directory", name="Local Project"),
+    # Claude / OpenCode Files
+    ConfigSource(Path.home() / ".claude.json", "file", name="Claude CLI"),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Claude Code"
+        / "claude_code_config.json",
+        "file",
+        name="Claude Code",
+    ),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Claude"
+        / "claude_code_config.json",
+        "file",
+        name="Claude Code (Legacy)",
+    ),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Claude"
+        / "claude_desktop_config.json",
+        "file",
+        name="Claude Desktop",
+    ),
+    ConfigSource(
+        Path.cwd() / "claude_code_config.json", "file", name="Local Claude Code"
+    ),
+    ConfigSource(
+        Path.cwd() / "claude_desktop_config.json", "file", name="Local Claude Desktop"
+    ),
+    ConfigSource(Path.home() / ".opencode.json", "file", name="OpenCode CLI"),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "OpenCode"
+        / "opencode_config.json",
+        "file",
+        name="OpenCode",
+    ),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "OpenCode"
+        / "opencode_desktop_config.json",
+        "file",
+        name="OpenCode Desktop",
+    ),
+    ConfigSource(Path.cwd() / "opencode_config.json", "file", name="Local OpenCode"),
+    ConfigSource(
+        Path.cwd() / "opencode_desktop_config.json",
+        "file",
+        name="Local OpenCode Desktop",
+    ),
+    # Other Clients
+    ConfigSource(Path.home() / ".gemini" / "settings.json", "file", name="Gemini CLI"),
+    ConfigSource(
+        Path.home() / ".codex" / "config.toml",
+        "file",
+        format="toml",
+        name="OpenAI Codex",
+    ),
+    ConfigSource(Path.home() / ".cursor" / "mcp.json", "file", name="Cursor"),
+    ConfigSource(
+        Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
+        "file",
+        name="Windsurf",
+    ),
+    ConfigSource(Path.cwd() / ".vscode" / "mcp.json", "file", name="VS Code Workspace"),
+    ConfigSource(
+        Path.home()
+        / "Library"
+        / "Application Support"
+        / "Code"
+        / "User"
+        / "settings.json",
+        "file",
+        name="VS Code Global (macOS)",
+    ),
+    ConfigSource(
+        Path.home() / ".config" / "Code" / "User" / "settings.json",
+        "file",
+        name="VS Code Global (Linux)",
+    ),
+    ConfigSource(
+        Path.home() / ".antigravity" / "settings.json", "file", name="Antigravity IDE"
+    ),
+    ConfigSource(
+        Path.home() / ".antigravity" / "mcp.json", "file", name="Antigravity IDE"
+    ),
 ]
 
 
@@ -1715,182 +1769,70 @@ class MCPBridge:
         self._search_index_dirty = False
 
     async def discover_servers(self) -> None:
-        if self._discovered:
-            return
-        self._discovered = True
-
-        for config_path in CLAUDE_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:  # pragma: no cover
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # Also check for OpenCode configuration files (opencode JSON) with similar 'mcpServers' entries.
-        for config_path in OPENCODE_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    # Keep existing precedence: do not override previously discovered servers
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:  # pragma: no cover
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # Gemini CLI
-        for config_path in GEMINI_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # OpenAI Codex (TOML)
-        if tomllib:
-            for config_path in CODEX_CONFIG_PATHS:
-                if not config_path.exists():
+        """Discover MCP servers from known configuration paths."""
+        # 1. Scan all configured sources
+        for source in CONFIG_SOURCES:
+            if source.type == "directory":
+                if not source.path.exists():
                     continue
                 try:
-                    with config_path.open("rb") as fh:
-                        config = tomllib.load(fh)
-                    for name, value in config.get("mcpServers", {}).items():
-                        if name in self.servers:
-                            continue
-                        info = self._parse_server_config(name, value)
-                        if info:
-                            self.servers[name] = info
-                            logger.info("Found MCP server %s in %s", name, config_path)
-                except Exception as exc:
-                    logger.warning("Failed to read %s: %s", config_path, exc)
+                    for config_file in source.path.glob("*.json"):
+                        self._load_server_config(
+                            config_file, source_name=f"{source.name} Dir"
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to scan directory {source.path}: {e}")
 
-        # Cursor
-        for config_path in CURSOR_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # Windsurf
-        for config_path in WINDSURF_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # VS Code Workspace
-        for config_path in VSCODE_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # VS Code Global
-        for config_path in VSCODE_GLOBAL_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    # VS Code settings.json can contain comments, which standard json lib might fail on.
-                    # For now, we assume standard JSON or use a permissive parser if available.
-                    config = json.load(fh)
-
-                # VS Code settings.json has keys like "mcpServers" at the root
-                for name, value in config.get("mcpServers", {}).items():
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        # Antigravity IDE
-        for config_path in ANTIGRAVITY_CONFIG_PATHS:
-            if not config_path.exists():
-                continue
-            try:
-                with config_path.open() as fh:
-                    config = json.load(fh)
-                for name, value in config.get("mcpServers", {}).items():
-                    if name in self.servers:
-                        continue
-                    info = self._parse_server_config(name, value)
-                    if info:
-                        self.servers[name] = info
-                        logger.info("Found MCP server %s in %s", name, config_path)
-            except Exception as exc:
-                logger.warning("Failed to read %s: %s", config_path, exc)
-
-        for config_dir in CONFIG_DIRS:
-            if not config_dir.exists():
-                continue
-            for config_file in config_dir.glob("*.json"):
+            elif source.type == "file":
+                if not source.path.exists():
+                    continue
                 try:
-                    with config_file.open() as fh:
-                        config = json.load(fh)
-                    for name, value in config.get("mcpServers", {}).items():
-                        if name in self.servers:
-                            continue
-                        info = self._parse_server_config(name, value)
-                        if info:
-                            self.servers[name] = info
-                            logger.info("Found MCP server %s in %s", name, config_file)
-                except Exception as exc:  # pragma: no cover
-                    logger.warning("Failed to read %s: %s", config_file, exc)
+                    self._load_server_config(
+                        source.path, file_format=source.format, source_name=source.name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to load config {source.path}: {e}")
+
+        # 2. Load from environment variable (highest priority for overrides if we implemented that)
+        env_config = os.environ.get("MCP_SERVERS_CONFIG")
+        if env_config:
+            try:
+                self._load_server_config(Path(env_config), source_name="Environment")
+            except Exception as e:
+                logger.error(f"Failed to load MCP_SERVERS_CONFIG: {e}")
+
+        logger.info("Discovered %d MCP servers", len(self.servers))
+
+    def _load_server_config(
+        self, path: Path, file_format: str = "json", source_name: str = "Unknown"
+    ) -> None:
+        """Helper to load server configurations from a given path."""
+        try:
+            config = {}
+            if file_format == "json":
+                with path.open() as fh:
+                    config = json.load(fh)
+            elif file_format == "toml":
+                if tomllib:
+                    with path.open("rb") as fh:
+                        config = tomllib.load(fh)
+                else:
+                    logger.warning(
+                        "tomllib not available, skipping TOML config: %s", path
+                    )
+                    return
+
+            for name, value in config.get("mcpServers", {}).items():
+                if name in self.servers:
+                    continue
+                info = self._parse_server_config(name, value)
+                if info:
+                    self.servers[name] = info
+                    logger.info(
+                        "Found MCP server %s in %s (%s)", name, path, source_name
+                    )
+        except Exception as exc:
+            logger.warning("Failed to read %s: %s", path, exc)
 
         logger.info("Discovered %d MCP servers", len(self.servers))
 
