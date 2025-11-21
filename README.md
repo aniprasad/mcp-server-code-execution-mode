@@ -102,6 +102,26 @@ Result: constant overhead. Whether you manage 10 or 1000 tools, the system promp
 | Tool doc search | ❌ | ❌ | ⚠️ Conceptual | ✅ `search_tool_docs()` |
 | Production hardening | ⚠️ Depends on you | ✅ Managed service | ❌ Prototype | ✅ Tested bridge |
 
+### Vs. Dynamic Toolsets (Speakeasy)
+
+Speakeasy's [Dynamic Toolsets](https://www.speakeasy.com/blog/how-we-reduced-token-usage-by-100x-dynamic-toolsets-v2) use a 3-step flow: `search_tools` → `describe_tools` → `execute_tool`. While this saves tokens, it forces the agent into a "chatty" loop:
+
+1.  **Search**: "Find tools for GitHub issues"
+2.  **Describe**: "Get schema for `create_issue`"
+3.  **Execute**: "Call `create_issue`"
+
+**This Bridge (Code-First) collapses that loop:**
+
+1.  **Code**: "Import `mcp_github`, search for 'issues', and create one if missing."
+
+The agent writes a **single Python script** that performs discovery, logic, and execution in one round-trip. It's faster, cheaper (fewer intermediate LLM calls), and handles complex logic (loops, retries) that a simple "execute" tool cannot.
+
+### Vs. OneMCP (Gentoro)
+
+OneMCP provides a "Handbook" chat interface where you ask questions and it plans execution. This is great for simple queries but turns the execution into a **black box**.
+
+**This Bridge** gives the agent **raw, sandboxed control**. The agent isn't asking a black box to "do it"; the agent *is* the programmer, writing the exact code to interact with the API. This allows for precise edge-case handling and complex data processing that a natural language planner might miss.
+
 ### Unique Features
 
 1. **Two-stage discovery** – `discovered_servers()` reveals what exists; `query_tool_docs(name)` loads only the schemas you need.
