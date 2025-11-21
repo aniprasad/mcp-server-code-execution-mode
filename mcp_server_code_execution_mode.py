@@ -37,6 +37,8 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
+    Tuple,
+    Union,
     cast,
 )
 
@@ -164,6 +166,7 @@ _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
 SANDBOX_HELPERS_SUMMARY = (
     "Python Sandbox. "
     "1. DISCOVER: `runtime.discovered_servers()`, `runtime.search_tool_docs('query')`. "
+    "Use `discovered_servers(detailed=True)` for descriptions. "
     "2. CALL: `await mcp_server.tool()`. "
     "3. PERSIST: `save_tool(func)`. "
     "Run `print(runtime.capability_summary())` for the full manual."
@@ -394,22 +397,33 @@ class MCPServerInfo:
     args: List[str]
     env: Dict[str, str]
     cwd: Optional[str] = None
+    description: str = ""
 
 
-def _looks_like_self_server(info: MCPServerInfo) -> bool:
+def _looks_like_self_server(
+    info: Union[MCPServerInfo, Dict[str, Any]], name: Optional[str] = None
+) -> bool:
     """Return True if the config appears to launch this bridge itself."""
+    if isinstance(info, MCPServerInfo):
+        server_name = info.name.lower()
+        command = info.command
+        args = info.args
+    else:
+        server_name = (name or "").lower()
+        command = str(info.get("command", ""))
+        raw_args = info.get("args", [])
+        args = [str(a) for a in raw_args] if isinstance(raw_args, list) else []
 
-    name = info.name.lower()
-    if name in _SELF_SERVER_TOKENS:
+    if server_name in _SELF_SERVER_TOKENS:
         return True
 
-    command_name = Path(info.command).name.lower()
+    command_name = Path(command).name.lower()
     if command_name in _SELF_SERVER_TOKENS or command_name.endswith(
         "mcp_server_code_execution_mode.py"
     ):
         return True
 
-    for arg in info.args:
+    for arg in args:
         arg_lower = str(arg).lower()
         arg_name = Path(arg_lower).name
         if (
@@ -854,11 +868,11 @@ class RootlessContainerSandbox:
     def _render_entrypoint(
         self,
         code: str,
-        server_metadata: Sequence[Dict[str, object]],
-        discovered_servers: Sequence[str],
+        servers_metadata: Sequence[Dict[str, object]],
+        discovered_servers: Dict[str, str],
     ) -> str:
-        metadata_json = json.dumps(server_metadata, separators=(",", ":"))
-        discovered_json = json.dumps(list(discovered_servers), separators=(",", ":"))
+        metadata_json = json.dumps(servers_metadata, separators=(",", ":"))
+        discovered_json = json.dumps(discovered_servers, separators=(",", ":"))
         template = textwrap.dedent(
             """
             import asyncio
@@ -1006,7 +1020,9 @@ class RootlessContainerSandbox:
                 _CAPABILITY_SUMMARY = (
                     "--- PYTHON SANDBOX MANUAL ---\\n"
                     "1. PHILOSOPHY: You are in a persistent Python environment. Prefer writing code over calling tools when possible.\\n"
-                    "2. DISCOVERY: Use `runtime.discovered_servers()` to list servers. Use `runtime.search_tool_docs('query')` to find tools. "
+                    "2. DISCOVERY: Use `runtime.discovered_servers()` to list servers. "
+                    "Use `runtime.discovered_servers(detailed=True)` for descriptions. "
+                    "Use `runtime.search_tool_docs('query')` to find tools. "
                     "Don't guess tool names; search first.\\n"
                     "3. PERSISTENCE: You can save your own tools! Define a Python function and call `save_tool(func)`. "
                     "It will be saved to `~/MCPs/user_tools.py` and auto-loaded in future sessions.\\n"
@@ -1074,8 +1090,10 @@ class RootlessContainerSandbox:
                 def list_servers_sync():
                     return tuple(name for name in _LOADED_SERVER_NAMES if name)
 
-                def discovered_servers():
-                    return tuple(DISCOVERED_SERVERS)
+                def discovered_servers(detailed=False):
+                    if detailed:
+                        return tuple({"name": k, "description": v} for k, v in DISCOVERED_SERVERS.items())
+                    return tuple(DISCOVERED_SERVERS.keys())
 
                 def describe_server(name):
                     return _lookup_server(name)
@@ -1467,7 +1485,7 @@ class RootlessContainerSandbox:
         *,
         timeout: int = DEFAULT_TIMEOUT,
         servers_metadata: Sequence[Dict[str, object]] = (),
-        discovered_servers: Sequence[str] = (),
+        discovered_servers: Dict[str, str] = {},
         container_env: Optional[Dict[str, str]] = None,
         volume_mounts: Optional[Sequence[str]] = None,
         host_dir: Optional[Path] = None,
@@ -1764,7 +1782,7 @@ class SandboxInvocation:
         self.volume_mounts: List[str] = []
         self.server_metadata: List[Dict[str, object]] = []
         self.allowed_servers: set[str] = set()
-        self.discovered_servers: List[str] = []
+        self.discovered_servers: Dict[str, str] = {}
 
     async def __aenter__(self) -> "SandboxInvocation":
         self.server_metadata = []
@@ -1776,7 +1794,9 @@ class SandboxInvocation:
             for meta in self.server_metadata
             if isinstance(meta.get("name"), str)
         }
-        self.discovered_servers = sorted(self.bridge.servers.keys())
+        self.discovered_servers = {
+            name: server.description for name, server in self.bridge.servers.items()
+        }
         state_dir_env = os.environ.get("MCP_BRIDGE_STATE_DIR")
         if state_dir_env:
             base_dir = Path(state_dir_env).expanduser()
@@ -1927,83 +1947,133 @@ class MCPBridge:
         self._search_index: List[Dict[str, object]] = []
         self._search_index_dirty = False
 
-    async def discover_servers(self) -> None:
-        """Discover MCP servers from known configuration paths."""
+    async def discover_servers(self) -> Dict[str, str]:
+        """
+        Scans all configured sources for MCP server definitions.
+        Returns a dict of server_name -> description.
+        """
+        discovered: Dict[str, str] = {}
+
         # 1. Scan all configured sources
         for source in CONFIG_SOURCES:
-            if source.type == "directory":
-                if not source.path.exists():
-                    continue
-                try:
-                    for config_file in source.path.glob("*.json"):
-                        self._load_server_config(
-                            config_file, source_name=f"{source.name} Dir"
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to scan directory {source.path}: {e}")
+            if not source.path.exists():
+                continue
 
-            elif source.type == "file":
-                if not source.path.exists():
-                    continue
-                try:
-                    self._load_server_config(
-                        source.path, file_format=source.format, source_name=source.name
+            try:
+                if source.type == "directory":
+                    for config_file in source.path.glob(f"*.{source.format}"):
+                        server_configs = self._load_server_config(
+                            config_file,
+                            source_name=f"{source.name} ({config_file.name})",
+                        )
+                        for name, (config, description) in server_configs.items():
+                            if name not in self.servers:
+                                info = self._parse_server_config(
+                                    name, config, description
+                                )
+                                if info:
+                                    self.servers[name] = info
+                                    discovered[name] = description
+                                    logger.info(
+                                        "Found MCP server %s in %s (%s)",
+                                        name,
+                                        config_file,
+                                        source.name,
+                                    )
+                elif source.type == "file":
+                    server_configs = self._load_server_config(
+                        source.path, source_name=source.name
                     )
-                except Exception as e:
-                    logger.warning(f"Failed to load config {source.path}: {e}")
+                    for name, (config, description) in server_configs.items():
+                        if name not in self.servers:
+                            info = self._parse_server_config(name, config, description)
+                            if info:
+                                self.servers[name] = info
+                                discovered[name] = description
+                                logger.info(
+                                    "Found MCP server %s in %s (%s)",
+                                    name,
+                                    source.path,
+                                    source.name,
+                                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to scan source {source.name} ({source.path}): {e}",
+                    exc_info=True,
+                )
 
         # 2. Load from environment variable (highest priority for overrides if we implemented that)
-        env_config = os.environ.get("MCP_SERVERS_CONFIG")
-        if env_config:
+        env_config_path = os.environ.get("MCP_SERVERS_CONFIG")
+        if env_config_path:
             try:
-                self._load_server_config(Path(env_config), source_name="Environment")
+                env_server_configs = self._load_server_config(
+                    Path(env_config_path), source_name="Environment"
+                )
+                for name, (config, description) in env_server_configs.items():
+                    if (
+                        name not in self.servers
+                    ):  # Environment variable configs override or add
+                        info = self._parse_server_config(name, config, description)
+                        if info:
+                            self.servers[name] = info
+                            discovered[name] = description
+                            logger.info(
+                                "Found MCP server %s in %s (Environment)",
+                                name,
+                                env_config_path,
+                            )
             except Exception as e:
-                logger.error(f"Failed to load MCP_SERVERS_CONFIG: {e}")
+                logger.error(
+                    f"Failed to load MCP_SERVERS_CONFIG from {env_config_path}: {e}"
+                )
 
         logger.info("Discovered %d MCP servers", len(self.servers))
+        self._discovered = True
+        return discovered
 
     def _load_server_config(
-        self, path: Path, file_format: str = "json", source_name: str = "Unknown"
-    ) -> None:
-        """Helper to load server configurations from a given path."""
+        self, path: Path, source_name: str = "Config"
+    ) -> Dict[str, Tuple[Dict[str, Any], str]]:
+        """
+        Loads MCP server configuration from a JSON or TOML file.
+        Returns a dict of server_name -> (server_config, description).
+        """
         try:
-            config = {}
-            if file_format == "json":
-                with path.open() as fh:
-                    config = json.load(fh)
-            elif file_format == "toml":
-                if tomllib:
-                    with path.open("rb") as fh:
-                        config = tomllib.load(fh)
+            with open(path, "rb") as f:
+                if path.suffix == ".toml":
+                    if tomllib:
+                        data = tomllib.load(f)
+                    else:
+                        logger.warning(
+                            f"Skipping {path}: tomllib not available (Python < 3.11)"
+                        )
+                        return {}
                 else:
-                    logger.warning(
-                        "tomllib not available, skipping TOML config: %s", path
-                    )
-                    return
+                    data = json.load(f)
 
-            for name, value in config.get("mcpServers", {}).items():
-                if name in self.servers:
-                    continue
-                info = self._parse_server_config(name, value)
-                if not info:
-                    continue
-                if not _ALLOW_SELF_SERVER and _looks_like_self_server(info):
-                    logger.info(
-                        "Skipping self-referential MCP server %s from %s (%s)",
-                        name,
-                        path,
-                        source_name,
-                    )
-                    continue
-                self.servers[name] = info
-                logger.info("Found MCP server %s in %s (%s)", name, path, source_name)
-        except Exception as exc:
-            logger.warning("Failed to read %s: %s", path, exc)
+            mcp_servers = data.get("mcpServers", {})
+            file_description = data.get("description", "")
 
-        logger.info("Discovered %d MCP servers", len(self.servers))
+            result = {}
+            for name, config in mcp_servers.items():
+                if _looks_like_self_server(config, name=name):
+                    if not _ALLOW_SELF_SERVER:
+                        logger.info(
+                            f"Skipping self-referential server '{name}' in {source_name}"
+                        )
+                        continue
+
+                server_desc = config.get("description", file_description)
+                result[name] = (config, server_desc)
+
+            return result
+
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Failed to load {source_name} from {path}: {e}")
+            return {}
 
     def _parse_server_config(
-        self, name: str, raw: Dict[str, object]
+        self, name: str, raw: Dict[str, object], description: str
     ) -> Optional[MCPServerInfo]:
         command = raw.get("command")
         if not isinstance(command, str):
@@ -2021,7 +2091,12 @@ class MCPBridge:
         if isinstance(cwd_raw, (str, Path)):
             cwd_str = str(cwd_raw)
         return MCPServerInfo(
-            name=name, command=command, args=str_args, env=str_env, cwd=cwd_str
+            name=name,
+            command=command,
+            args=str_args,
+            env=str_env,
+            cwd=cwd_str,
+            description=description,
         )
 
     async def load_server(self, server_name: str) -> None:

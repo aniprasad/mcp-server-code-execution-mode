@@ -96,7 +96,7 @@ def _run_entrypoint(
         dummy_sandbox,
         user_code,
         cast(Sequence[Dict[str, object]], metadata_list),
-        [metadata_list[0]["name"]],
+        {metadata_list[0]["name"]: "Description"},
     )
 
     calls: List[Dict[str, object]] = []
