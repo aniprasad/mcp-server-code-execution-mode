@@ -19,6 +19,7 @@ This bridge implements the **"Code Execution with MCP"** pattern, a convergence 
 - **Anthropic's [Code execution with MCP](https://www.anthropic.com/engineering/code-execution-with-mcp)**: "Building more efficient agents."
 - **Cloudflare's [Code Mode](https://blog.cloudflare.com/code-mode/)**: "LLMs are better at writing code to call MCP, than at calling MCP directly."
 - **Docker's [Dynamic MCPs](https://www.docker.com/blog/dynamic-mcps-stop-hardcoding-your-agents-world/)**: "Stop Hardcoding Your Agents’ World."
+- **[Terminal Bench](https://www.tbench.ai)'s [Terminus](https://www.tbench.ai/terminus)**: "A realistic terminal environment for evaluating LLM agents."
 
 Instead of exposing hundreds of individual tools to the LLM (which consumes massive context and confuses the model), this bridge exposes **one** tool: `run_python`. The LLM writes Python code to discover, call, and compose other tools.
 
@@ -106,13 +107,13 @@ Result: constant overhead. Whether you manage 10 or 1000 tools, the system promp
 
 Speakeasy's [Dynamic Toolsets](https://www.speakeasy.com/blog/how-we-reduced-token-usage-by-100x-dynamic-toolsets-v2) use a 3-step flow: `search_tools` → `describe_tools` → `execute_tool`. While this saves tokens, it forces the agent into a "chatty" loop:
 
-1.  **Search**: "Find tools for GitHub issues"
-2.  **Describe**: "Get schema for `create_issue`"
-3.  **Execute**: "Call `create_issue`"
+1. **Search**: "Find tools for GitHub issues"
+2. **Describe**: "Get schema for `create_issue`"
+3. **Execute**: "Call `create_issue`"
 
 **This Bridge (Code-First) collapses that loop:**
 
-1.  **Code**: "Import `mcp_github`, search for 'issues', and create one if missing."
+1. **Code**: "Import `mcp_github`, search for 'issues', and create one if missing."
 
 The agent writes a **single Python script** that performs discovery, logic, and execution in one round-trip. It's faster, cheaper (fewer intermediate LLM calls), and handles complex logic (loops, retries) that a simple "execute" tool cannot.
 
@@ -175,6 +176,7 @@ This server aligns with the philosophy that [you might not need MCP at all](http
 
 ### ⚡ Performance
 
+- **Persistent sessions** - Variables and state retained across calls
 - **Persistent clients** - MCP servers stay warm
 - **Context efficiency** - 95%+ reduction vs traditional MCP
 - **Async execution** - Proper resource management
@@ -379,8 +381,9 @@ Unlike traditional MCP servers that preload every tool definition (sometimes 30k
 2. Bridge loads requested MCP servers
 3. Prepares a sandbox invocation: collects MCP tool metadata, writes an entrypoint into a shared `/ipc` volume, and exports `MCP_AVAILABLE_SERVERS`
 4. Generated entrypoint rewires stdio into JSON-framed messages and proxies MCP calls over the container's stdin/stdout pipe
-5. Runs container with security constraints
-6. Host stream handler processes JSON frames, forwards MCP traffic, enforces timeouts, and cleans up
+5. **Persistent Execution**: The container is started once (if not running) and stays active.
+6. **State Retention**: Variables, imports, and functions defined in one call are available in subsequent calls.
+7. Host stream handler processes JSON frames, forwards MCP traffic, enforces timeouts, and keeps the container alive for the next request.
 
 ## Configuration
 
@@ -586,6 +589,7 @@ servers explicitly.
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Dynamic MCPs with Docker](https://www.docker.com/blog/dynamic-mcps-stop-hardcoding-your-agents-world/)
 - [CodeAct: Your LLM Agent Acts Better when Generating Code (Apple)](https://machinelearning.apple.com/research/codeact)
+- [Terminal Bench](https://github.com/laude-institute/terminal-bench)
 
 ## Status
 
@@ -594,7 +598,8 @@ servers explicitly.
 - Rootless container sandbox
 - Single `run_python` tool
 - MCP server proxying
-- Persistent clients
+- Persistent sessions (state retention)
+- Persistent clients (warm MCP servers)
 - Comprehensive docs
 
 ### 🔄 In Progress
