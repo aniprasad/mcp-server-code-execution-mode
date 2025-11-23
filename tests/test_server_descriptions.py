@@ -28,12 +28,11 @@ async def test_server_descriptions_in_sandbox():
 
     real_sandbox = RootlessContainerSandbox(runtime="podman")
 
-    code = "print(runtime.discovered_servers(detailed=True))"
     servers_metadata = []
     discovered_servers = {"test-server": "A test server description"}
 
     entrypoint_script = real_sandbox._render_entrypoint(
-        code, servers_metadata, discovered_servers
+        servers_metadata, discovered_servers
     )
 
     # Check if the description is present in the generated script

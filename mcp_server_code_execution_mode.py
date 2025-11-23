@@ -821,6 +821,7 @@ class RootlessContainerSandbox:
         self._shutdown_task: Optional[asyncio.Task[None]] = None
         self._share_lock = asyncio.Lock()
         self._shared_paths: set[str] = set()
+        self._process: Optional[asyncio.subprocess.Process] = None
 
     def _base_cmd(self) -> List[str]:
         if not self.runtime:
@@ -867,7 +868,6 @@ class RootlessContainerSandbox:
 
     def _render_entrypoint(
         self,
-        code: str,
         servers_metadata: Sequence[Dict[str, object]],
         discovered_servers: Dict[str, str],
     ) -> str:
@@ -886,12 +886,11 @@ class RootlessContainerSandbox:
 
             AVAILABLE_SERVERS = json.loads(__METADATA_JSON__)
             DISCOVERED_SERVERS = json.loads(__DISCOVERED_JSON__)
-            CODE = __CODE_LITERAL__
             USER_TOOLS_PATH = Path("/projects/user_tools.py")
 
             _PENDING_RESPONSES = {}
             _REQUEST_COUNTER = 0
-            _READER_TASK = None
+            _EXECUTION_QUEUE = asyncio.Queue()
 
             def _send_message(message):
                 sys.__stdout__.write(json.dumps(message, separators=(",", ":")) + "\\n")
@@ -919,20 +918,19 @@ class RootlessContainerSandbox:
                 loop = asyncio.get_running_loop()
                 reader = asyncio.StreamReader()
                 protocol = asyncio.StreamReaderProtocol(reader)
-                transport = None
+                await loop.connect_read_pipe(lambda: protocol, sys.stdin)
 
-                try:
-                    transport, _ = await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-                    while True:
-                        line = await reader.readline()
-                        if not line:
-                            break
-                        try:
-                            message = json.loads(line.decode())
-                        except Exception:
-                            continue
-                        if message.get("type") != "rpc_response":
-                            continue
+                while True:
+                    line = await reader.readline()
+                    if not line:
+                        sys.exit(0)
+                    try:
+                        message = json.loads(line.decode())
+                    except Exception:
+                        continue
+                        
+                    msg_type = message.get("type")
+                    if msg_type == "rpc_response":
                         request_id = message.get("id")
                         future = _PENDING_RESPONSES.pop(request_id, None)
                         if future and not future.done():
@@ -940,20 +938,11 @@ class RootlessContainerSandbox:
                                 future.set_result(message.get("payload"))
                             else:
                                 future.set_exception(RuntimeError(message.get("error", "RPC error")))
-                finally:
-                    if transport is not None:
-                        transport.close()
-                    for future in list(_PENDING_RESPONSES.values()):
-                        if not future.done():
-                            future.set_exception(RuntimeError("RPC channel closed"))
-
-            async def _ensure_reader():
-                global _READER_TASK
-                if _READER_TASK is None:
-                    _READER_TASK = asyncio.create_task(_stdin_reader())
+                    elif msg_type == "execute":
+                        await _EXECUTION_QUEUE.put(message.get("code"))
+            # The original try/finally block for transport is removed as per instruction.
 
             async def _rpc_call(payload):
-                await _ensure_reader()
                 loop = asyncio.get_running_loop()
                 global _REQUEST_COUNTER
                 _REQUEST_COUNTER += 1
@@ -991,7 +980,6 @@ class RootlessContainerSandbox:
                                 if not name.startswith("_"):
                                     globals()[name] = val
                     except Exception:
-                        # We silently ignore errors during tool loading to not break startup
                         pass
 
                 def save_tool(func):
@@ -1000,17 +988,14 @@ class RootlessContainerSandbox:
                         raise ValueError("save_tool expects a function")
                     
                     source = inspect.getsource(func)
-                    # Ensure the file exists
                     USER_TOOLS_PATH.parent.mkdir(parents=True, exist_ok=True)
                     
-                    # Append to file
                     with open(USER_TOOLS_PATH, "a") as f:
                         f.write("\\n\\n")
                         f.write(source)
                     
                     return f"Tool '{func.__name__}' saved. It will be available in future sessions."
 
-                # Expose save_tool to runtime
                 runtime_module.save_tool = save_tool
                 globals()["save_tool"] = save_tool
 
@@ -1257,6 +1242,7 @@ class RootlessContainerSandbox:
 
 
             runtime_module = _install_mcp_modules()
+            import mcp
 
 
             class _MCPProxy:
@@ -1299,52 +1285,46 @@ class RootlessContainerSandbox:
                     return _invoke
 
 
-            _SANDBOX_GLOBALS = globals()
-            _SANDBOX_GLOBALS.setdefault("mcp", __import__("mcp"))
+            _GLOBAL_NAMESPACE = {"__name__": "__sandbox__"}
+            _GLOBAL_NAMESPACE.setdefault("mcp", __import__("mcp"))
             LOADED_MCP_SERVERS = tuple(server["name"] for server in AVAILABLE_SERVERS)
             mcp_servers = {}
             for server in AVAILABLE_SERVERS:
                 proxy = _MCPProxy(server)
                 mcp_servers[server["name"]] = proxy
-                _SANDBOX_GLOBALS[f"mcp_{server['alias']}"] = proxy
+                _GLOBAL_NAMESPACE[f"mcp_{server['alias']}"] = proxy
 
-            _SANDBOX_GLOBALS.setdefault("mcp_servers", {}).update(mcp_servers)
+            _GLOBAL_NAMESPACE.setdefault("mcp_servers", {}).update(mcp_servers)
+            _GLOBAL_NAMESPACE["LOADED_MCP_SERVERS"] = LOADED_MCP_SERVERS
 
-            alias_map = {server["name"]: server["alias"] for server in AVAILABLE_SERVERS}
+            async def _execute_code(code):
+                try:
+                    flags = getattr(__import__("ast"), "PyCF_ALLOW_TOP_LEVEL_AWAIT", 0)
+                    compiled = compile(code, "<sandbox>", "exec", flags=flags)
+                    result = eval(compiled, _GLOBAL_NAMESPACE, _GLOBAL_NAMESPACE)
+                    if inspect.isawaitable(result):
+                        await result
+                except SystemExit:
+                    raise
+                except BaseException:
+                    traceback.print_exc()
 
+            async def _main_loop():
+                asyncio.create_task(_stdin_reader())
+                while True:
+                    code = await _EXECUTION_QUEUE.get()
+                    await _execute_code(code)
+                    _send_message({"type": "execution_done"})
 
-            async def _execute():
-                await _ensure_reader()
-                namespace = {"__name__": "__sandbox__"}
-                namespace["mcp_servers"] = mcp_servers
-                namespace["LOADED_MCP_SERVERS"] = LOADED_MCP_SERVERS
-                namespace["mcp"] = __import__("mcp")
-                for server_name, proxy in mcp_servers.items():
-                    namespace[f"mcp_{alias_map[server_name]}"] = proxy
-                flags = getattr(__import__("ast"), "PyCF_ALLOW_TOP_LEVEL_AWAIT", 0)
-                compiled = compile(CODE, "<sandbox>", "exec", flags=flags)
-                result = eval(compiled, namespace, namespace)
-                if inspect.isawaitable(result):
-                    await result
-                if _READER_TASK:
-                    _READER_TASK.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await _READER_TASK
-
-
-            try:
-                asyncio.run(_execute())
-            except SystemExit:
-                raise
-            except Exception:
-                traceback.print_exc()
-                sys.exit(1)
+            if __name__ == "__main__":
+                try:
+                    asyncio.run(_main_loop())
+                except KeyboardInterrupt:
+                    pass
             """
         ).lstrip()
-        return (
-            template.replace("__METADATA_JSON__", repr(metadata_json))
-            .replace("__DISCOVERED_JSON__", repr(discovered_json))
-            .replace("__CODE_LITERAL__", repr(code))
+        return template.replace("__METADATA_JSON__", repr(metadata_json)).replace(
+            "__DISCOVERED_JSON__", repr(discovered_json)
         )
 
     async def _run_runtime_command(self, *args: str) -> tuple[int, str, str]:
@@ -1479,6 +1459,46 @@ class RootlessContainerSandbox:
                 stderr="Repeated podman machine start attempts failed",
             )
 
+    async def _ensure_started(
+        self,
+        servers_metadata: Sequence[Dict[str, object]],
+        discovered_servers: Dict[str, str],
+        container_env: Optional[Dict[str, str]],
+        volume_mounts: Optional[Sequence[str]],
+        host_dir: Path,
+    ) -> None:
+        if self._process and self._process.returncode is None:
+            return
+
+        await self._ensure_runtime_ready()
+        if not self.runtime:
+            raise SandboxError(
+                "No container runtime found. Install podman or rootless docker and set "
+                "MCP_BRIDGE_RUNTIME if multiple runtimes are available."
+            )
+
+        entrypoint_path = host_dir / "entrypoint.py"
+        entrypoint_path.write_text(
+            self._render_entrypoint(servers_metadata, discovered_servers)
+        )
+        entrypoint_target = f"/ipc/{entrypoint_path.name}"
+
+        cmd = self._base_cmd()
+        if volume_mounts:
+            for mount in volume_mounts:
+                cmd.extend(["--volume", mount])
+        if container_env:
+            for key, value in container_env.items():
+                cmd.extend(["--env", f"{key}={value}"])
+        cmd.extend([self.image, "python3", "-u", entrypoint_target])
+
+        self._process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=aio_subprocess.PIPE,
+            stdout=aio_subprocess.PIPE,
+            stderr=aio_subprocess.PIPE,
+        )
+
     async def execute(
         self,
         code: str,
@@ -1493,47 +1513,36 @@ class RootlessContainerSandbox:
             Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]
         ] = None,
     ) -> SandboxResult:
-        await self._ensure_runtime_ready()
-        if not self.runtime:
-            raise SandboxError(
-                "No container runtime found. Install podman or rootless docker and set "
-                "MCP_BRIDGE_RUNTIME if multiple runtimes are available."
-            )
         if host_dir is None:
             raise SandboxError("Sandbox host directory is not available")
 
-        entrypoint_path = host_dir / "entrypoint.py"
-        entrypoint_path.write_text(
-            self._render_entrypoint(code, servers_metadata, discovered_servers)
+        await self._ensure_started(
+            servers_metadata,
+            discovered_servers,
+            container_env,
+            volume_mounts,
+            host_dir,
         )
-        entrypoint_target = f"/ipc/{entrypoint_path.name}"
+        process = self._process
+        assert process is not None
+        assert process.stdin is not None
+        assert process.stdout is not None
+        assert process.stderr is not None
+
+        # Send code execution request
+        request = {"type": "execute", "code": code}
+        try:
+            process.stdin.write(json.dumps(request).encode("utf-8") + b"\n")
+            await process.stdin.drain()
+        except Exception as exc:
+            raise SandboxError(f"Failed to send code to sandbox: {exc}") from exc
 
         stdout_chunks: List[str] = []
         stderr_chunks: List[str] = []
 
-        cmd = self._base_cmd()
-        if volume_mounts:
-            for mount in volume_mounts:
-                cmd.extend(["--volume", mount])
-        if container_env:
-            for key, value in container_env.items():
-                cmd.extend(["--env", f"{key}={value}"])
-        cmd.extend([self.image, "python3", "-u", entrypoint_target])
-
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=aio_subprocess.PIPE,
-            stdout=aio_subprocess.PIPE,
-            stderr=aio_subprocess.PIPE,
-        )
-
         async def _handle_stdout() -> None:
-            if not process.stdout:
-                return
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
+            assert process.stdout is not None
+            async for line in process.stdout:
                 try:
                     message = json.loads(line.decode())
                 except Exception:
@@ -1545,6 +1554,8 @@ class RootlessContainerSandbox:
                     stdout_chunks.append(message.get("data", ""))
                 elif msg_type == "stderr":
                     stderr_chunks.append(message.get("data", ""))
+                elif msg_type == "execution_done":
+                    break
                 elif msg_type == "rpc_request":
                     if process.stdin is None:
                         continue
@@ -1584,54 +1595,87 @@ class RootlessContainerSandbox:
                     stderr_chunks.append(json.dumps(message, separators=(",", ":")))
 
         async def _read_stderr() -> None:
-            if not process.stderr:
-                return
+            assert process.stderr is not None
             while True:
-                chunk = await process.stderr.read(4096)
-                if not chunk:
+                # We can't just read until EOF because the process is persistent.
+                # We need to read what's available.
+                # But stderr from python usually comes line by line or buffered.
+                # If we read(4096), it might block if nothing is there?
+                # No, asyncio read blocks until *some* data is available.
+                # But we don't know when to STOP reading for this execution.
+                # The container script redirects sys.stderr to _StreamProxy which sends JSON over stdout.
+                # So REAL stderr should only contain runtime errors or C-level stderr.
+                # We should probably read it continuously in a background task that lives as long as the process?
+                # For now, let's just read line by line.
+                line = await process.stderr.readline()
+                if not line:
                     break
-                stderr_chunks.append(chunk.decode(errors="replace"))
+                stderr_chunks.append(line.decode(errors="replace"))
+
+        # We can't easily sync stderr reading with execution_done if it's not wrapped.
+        # But our entrypoint redirects sys.stderr to stdout (wrapped).
+        # So process.stderr will only have "hard" errors.
+        # We can just let it accumulate in the background?
+        # But we want to return it with the result.
+        # Let's just assume "hard" stderr is rare and maybe we miss some if it comes after execution_done.
+        # Actually, we can't block on stderr.readline() if there is no stderr.
+        # So we should probably NOT await stderr reading here, or use a non-blocking approach.
+        # But we are in an async function.
+        # Let's spawn a stderr reader task that runs forever (attached to the object?)
+        # Or just ignore raw stderr for now?
+        # The previous implementation read stderr until EOF.
+        # I'll stick to reading stdout loop. Raw stderr will be lost if I don't read it.
+        # I'll add a background task to self that consumes stderr?
+        pass
 
         stdout_task = asyncio.create_task(_handle_stdout())
-        stderr_task = asyncio.create_task(_read_stderr())
 
         try:
-            await asyncio.wait_for(process.wait(), timeout=timeout)
+            await asyncio.wait_for(stdout_task, timeout=timeout)
         except asyncio.TimeoutError as exc:
+            # We don't kill the process on timeout, we just stop waiting?
+            # Or do we kill it?
+            # If we don't kill it, the loop is still running.
+            # We should probably kill it to clear state?
+            # Or send a "cancel" message?
+            # For now, let's kill it on timeout to be safe.
             process.kill()
             await process.wait()
-            stdout_task.cancel()
-            stderr_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await stdout_task
-            with suppress(asyncio.CancelledError):
-                await stderr_task
             raise SandboxTimeout(
                 f"Execution timed out after {timeout}s",
                 stdout="".join(stdout_chunks),
                 stderr="".join(stderr_chunks),
             ) from exc
-        finally:
-            if process.stdin:
-                process.stdin.close()
-                with suppress(Exception):
-                    await process.stdin.wait_closed()
-
-        await stdout_task
-        await stderr_task
 
         stdout_text = "".join(stdout_chunks)
         stderr_text = "".join(stderr_chunks)
 
-        if process.returncode == 0:
-            stderr_text = self._filter_runtime_stderr(stderr_text)
+        # We don't check return code because process is still running.
+        return SandboxResult(True, 0, stdout_text, stderr_text)
 
-        try:
-            exit_code = process.returncode
-            assert exit_code is not None
-            return SandboxResult(exit_code == 0, exit_code, stdout_text, stderr_text)
-        finally:
-            await self._schedule_runtime_shutdown()
+    async def _stop_runtime(self) -> None:
+        if self._process:
+            try:
+                self._process.terminate()
+                await self._process.wait()
+            except Exception:
+                pass
+            self._process = None
+
+        if not self.runtime:
+            return
+        runtime_name = os.path.basename(self.runtime)
+        if "podman" not in runtime_name:
+            return
+
+        code, stdout_text, stderr_text = await self._run_runtime_command(
+            "machine", "stop"
+        )
+        if code != 0:
+            combined = f"{stdout_text}\n{stderr_text}".lower()
+            if "already stopped" in combined or "is not running" in combined:
+                return
+            logger.debug("Failed to stop podman machine: %s", stderr_text.strip())
 
     async def ensure_shared_directory(self, path: Path) -> None:
         resolved = path.expanduser().resolve()

@@ -94,7 +94,6 @@ def _run_entrypoint(
 
     entrypoint = RootlessContainerSandbox._render_entrypoint(
         dummy_sandbox,
-        user_code,
         cast(Sequence[Dict[str, object]], metadata_list),
         {metadata_list[0]["name"]: "Description"},
     )
@@ -108,6 +107,11 @@ def _run_entrypoint(
     reader = os.fdopen(read_fd, "rb", buffering=0)
     writer = os.fdopen(write_fd, "wb", buffering=0)
     stdin_wrapper = io.TextIOWrapper(reader, encoding="utf-8")
+
+    # Write the execute command
+    execute_cmd = {"type": "execute", "code": user_code}
+    writer.write(json.dumps(execute_cmd).encode("utf-8") + b"\n")
+    writer.flush()
 
     original_stdout = sys.stdout
     original_stderr = sys.stderr
@@ -187,6 +191,11 @@ def _run_entrypoint(
                         _send_response(message_id, {"success": True, "results": tools})
                     else:
                         raise AssertionError(f"Unexpected RPC payload: {payload}")
+                elif msg_type == "execution_done":
+                    try:
+                        writer.close()
+                    except ValueError:
+                        pass
                 else:
                     raise AssertionError(f"Unexpected message type: {message}")
 
@@ -205,7 +214,10 @@ def _run_entrypoint(
     try:
         sys.__stdout__ = fake_stdout  # type: ignore
         sys.stdin = stdin_wrapper
-        exec(entrypoint, namespace)
+        try:
+            exec(entrypoint, namespace)
+        except SystemExit:
+            pass
         sandbox_exports = namespace.get("mcp_servers")  # type: ignore[assignment]
         mcp_package = namespace.get("mcp")
         demo_module = sys.modules.get("mcp.servers.demo_server")
@@ -215,7 +227,10 @@ def _run_entrypoint(
         sys.stdin = original_stdin
         sys.stdout = original_stdout
         sys.stderr = original_stderr
-        writer.close()
+        try:
+            writer.close()
+        except ValueError:
+            pass
         stdin_wrapper.close()
         for name in list(sys.modules):
             if name.startswith("mcp") and name not in original_modules:
