@@ -164,7 +164,7 @@ _PODMAN_PULL_PREFIXES: tuple[str, ...] = (
 )
 
 SANDBOX_HELPERS_SUMMARY = (
-    "Python Sandbox. "
+    "Persistent Python Sandbox (state retained between tool calls). "
     "1. DISCOVER: `runtime.discovered_servers()`, `runtime.search_tool_docs('query')`. "
     "Use `discovered_servers(detailed=True)` for descriptions. "
     "2. CALL: `await mcp_server.tool()`. "
