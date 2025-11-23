@@ -2495,8 +2495,10 @@ async def list_tools() -> List[Tool]:
         Tool(
             name="run_python",
             description=(
-                "Execute Python code inside a rootless container sandbox. "
-                "Use the optional 'servers' array to load MCP servers for this execution."
+                "The Code Execution MCP engine. Executes Python code in a stateful, persistent rootless sandbox environment "
+                "similar to a Jupyter notebook. Variables, functions, and imports are preserved across calls. "
+                "Use this tool for general code execution, data analysis, or when the user asks to 'run code'. "
+                "Supports loading additional MCP servers via the 'servers' array."
             ),
             inputSchema={
                 "type": "object",
