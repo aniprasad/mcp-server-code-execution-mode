@@ -168,7 +168,8 @@ SANDBOX_HELPERS_SUMMARY = (
     "1. DISCOVER: `runtime.discovered_servers()`, `runtime.search_tool_docs('query')`. "
     "Use `discovered_servers(detailed=True)` for descriptions. "
     "2. CALL: `await mcp_server.tool()`. "
-    "3. PERSIST: `save_tool(func)`. "
+    "3. PERSIST: `save_tool(func)` for functions, `save_memory(key, value)` for data. "
+    "4. MEMORY: `load_memory(key)`, `list_memories()`, `update_memory(key, fn)`. "
     "Run `print(runtime.capability_summary())` for the full manual."
 )
 
@@ -216,126 +217,74 @@ class ConfigSource(NamedTuple):
     name: str = "Unknown"
 
 
+# Platform-specific paths
+_IS_MACOS = sys.platform == "darwin"
+_IS_LINUX = sys.platform.startswith("linux")
+
 CONFIG_SOURCES = [
-    # Only load configs from the MCPs directory for now.
+    # Primary: User MCPs directory (recommended)
     ConfigSource(Path.home() / "MCPs", "directory", name="User MCPs"),
+    # Standard MCP config directory
+    ConfigSource(
+        Path.home() / ".config" / "mcp" / "servers", "directory", name="Standard MCP"
+    ),
+    # Local project configs
+    ConfigSource(Path.cwd() / "mcp-servers", "directory", name="Local Project"),
+    ConfigSource(Path.cwd() / ".vscode" / "mcp.json", "file", name="VS Code Workspace"),
+    # Claude configs
+    ConfigSource(Path.home() / ".claude.json", "file", name="Claude CLI"),
+    # Cursor
+    ConfigSource(Path.home() / ".cursor" / "mcp.json", "file", name="Cursor"),
+    # OpenCode
+    ConfigSource(Path.home() / ".opencode.json", "file", name="OpenCode CLI"),
+    # Windsurf/Codeium
+    ConfigSource(
+        Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
+        "file",
+        name="Windsurf",
+    ),
 ]
 
-"""Temporarily disabled config sources (kept for reference):
-ConfigSource(
-    Path.home() / ".config" / "mcp" / "servers", "directory", name="Standard MCP"
-),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude Code"
-    / "mcp"
-    / "servers",
-    "directory",
-    name="Claude Code",
-),
-ConfigSource(
-    Path.home() / "Library" / "Application Support" / "Claude" / "mcp" / "servers",
-    "directory",
-    name="Claude Desktop",
-),
-ConfigSource(Path.cwd() / "mcp-servers", "directory", name="Local Project"),
-ConfigSource(Path.home() / ".claude.json", "file", name="Claude CLI"),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude Code"
-    / "claude_code_config.json",
-    "file",
-    name="Claude Code",
-),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude"
-    / "claude_code_config.json",
-    "file",
-    name="Claude Code (Legacy)",
-),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Claude"
-    / "claude_desktop_config.json",
-    "file",
-    name="Claude Desktop",
-),
-ConfigSource(
-    Path.cwd() / "claude_code_config.json", "file", name="Local Claude Code"
-),
-ConfigSource(
-    Path.cwd() / "claude_desktop_config.json", "file", name="Local Claude Desktop"
-),
-ConfigSource(Path.home() / ".opencode.json", "file", name="OpenCode CLI"),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "OpenCode"
-    / "opencode_config.json",
-    "file",
-    name="OpenCode",
-),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "OpenCode"
-    / "opencode_desktop_config.json",
-    "file",
-    name="OpenCode Desktop",
-),
-ConfigSource(Path.cwd() / "opencode_config.json", "file", name="Local OpenCode"),
-ConfigSource(
-    Path.cwd() / "opencode_desktop_config.json",
-    "file",
-    name="Local OpenCode Desktop",
-),
-ConfigSource(Path.home() / ".gemini" / "settings.json", "file", name="Gemini CLI"),
-ConfigSource(
-    Path.home() / ".codex" / "config.toml",
-    "file",
-    format="toml",
-    name="OpenAI Codex",
-),
-ConfigSource(Path.home() / ".cursor" / "mcp.json", "file", name="Cursor"),
-ConfigSource(
-    Path.home() / ".codeium" / "windsurf" / "mcp_config.json",
-    "file",
-    name="Windsurf",
-),
-ConfigSource(Path.cwd() / ".vscode" / "mcp.json", "file", name="VS Code Workspace"),
-ConfigSource(
-    Path.home()
-    / "Library"
-    / "Application Support"
-    / "Code"
-    / "User"
-    / "settings.json",
-    "file",
-    name="VS Code Global (macOS)",
-),
-ConfigSource(
-    Path.home() / ".config" / "Code" / "User" / "settings.json",
-    "file",
-    name="VS Code Global (Linux)",
-),
-ConfigSource(
-    Path.home() / ".antigravity" / "settings.json", "file", name="Antigravity IDE"
-),
-ConfigSource(
-    Path.home() / ".antigravity" / "mcp.json", "file", name="Antigravity IDE"
-),
-"""
+# Add platform-specific paths
+if _IS_MACOS:
+    CONFIG_SOURCES.extend([
+        ConfigSource(
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude Code"
+            / "claude_code_config.json",
+            "file",
+            name="Claude Code (macOS)",
+        ),
+        ConfigSource(
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json",
+            "file",
+            name="Claude Desktop (macOS)",
+        ),
+        ConfigSource(
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Code"
+            / "User"
+            / "settings.json",
+            "file",
+            name="VS Code Global (macOS)",
+        ),
+    ])
+elif _IS_LINUX:
+    CONFIG_SOURCES.extend([
+        ConfigSource(
+            Path.home() / ".config" / "Code" / "User" / "settings.json",
+            "file",
+            name="VS Code Global (Linux)",
+        ),
+    ])
 
 
 class SandboxError(RuntimeError):
@@ -887,6 +836,7 @@ class RootlessContainerSandbox:
             AVAILABLE_SERVERS = json.loads(__METADATA_JSON__)
             DISCOVERED_SERVERS = json.loads(__DISCOVERED_JSON__)
             USER_TOOLS_PATH = Path("/projects/user_tools.py")
+            MEMORY_DIR = Path("/projects/memory")
 
             _PENDING_RESPONSES = {}
             _REQUEST_COUNTER = 0
@@ -999,6 +949,195 @@ class RootlessContainerSandbox:
                 runtime_module.save_tool = save_tool
                 globals()["save_tool"] = save_tool
 
+                # --- Memory System ---
+                def _sanitize_memory_key(key):
+                    '''Sanitize a memory key to be a valid filename.'''
+                    import re
+                    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', str(key).strip())
+                    if not sanitized:
+                        raise ValueError("Memory key cannot be empty")
+                    if len(sanitized) > 100:
+                        sanitized = sanitized[:100]
+                    return sanitized
+
+                def save_memory(key, value, *, metadata=None):
+                    '''Save structured data to persistent memory.
+                    
+                    Args:
+                        key: A string identifier for this memory (e.g., "project_context", "user_preferences")
+                        value: Any JSON-serializable data (dict, list, str, int, etc.)
+                        metadata: Optional dict with additional info (e.g., {"tags": ["important"]})
+                    
+                    Returns:
+                        Confirmation message
+                    
+                    Example:
+                        save_memory("project_context", {"goal": "Build API", "progress": ["Step 1 done"]})
+                    '''
+                    import time
+                    sanitized_key = _sanitize_memory_key(key)
+                    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+                    
+                    memory_file = MEMORY_DIR / f"{sanitized_key}.json"
+                    memory_data = {
+                        "key": key,
+                        "value": value,
+                        "metadata": metadata or {},
+                        "created_at": time.time(),
+                        "updated_at": time.time(),
+                    }
+                    
+                    # If file exists, preserve created_at
+                    if memory_file.exists():
+                        try:
+                            existing = json.loads(memory_file.read_text())
+                            memory_data["created_at"] = existing.get("created_at", memory_data["created_at"])
+                        except Exception:
+                            pass
+                    
+                    memory_file.write_text(json.dumps(memory_data, indent=2, default=str))
+                    return f"Memory '{key}' saved."
+
+                def load_memory(key, *, default=None):
+                    '''Load data from persistent memory.
+                    
+                    Args:
+                        key: The memory identifier
+                        default: Value to return if memory doesn't exist
+                    
+                    Returns:
+                        The stored value, or default if not found
+                    
+                    Example:
+                        ctx = load_memory("project_context", default={})
+                    '''
+                    sanitized_key = _sanitize_memory_key(key)
+                    memory_file = MEMORY_DIR / f"{sanitized_key}.json"
+                    
+                    if not memory_file.exists():
+                        return default
+                    
+                    try:
+                        data = json.loads(memory_file.read_text())
+                        return data.get("value", default)
+                    except Exception:
+                        return default
+
+                def delete_memory(key):
+                    '''Delete a memory entry.
+                    
+                    Args:
+                        key: The memory identifier to delete
+                    
+                    Returns:
+                        Confirmation message
+                    '''
+                    sanitized_key = _sanitize_memory_key(key)
+                    memory_file = MEMORY_DIR / f"{sanitized_key}.json"
+                    
+                    if memory_file.exists():
+                        memory_file.unlink()
+                        return f"Memory '{key}' deleted."
+                    return f"Memory '{key}' not found."
+
+                def list_memories():
+                    '''List all saved memory keys with metadata.
+                    
+                    Returns:
+                        List of dicts with key, metadata, created_at, updated_at
+                    
+                    Example:
+                        memories = list_memories()
+                        for m in memories:
+                            print(f"{m['key']}: {m.get('metadata', {})}")
+                    '''
+                    if not MEMORY_DIR.exists():
+                        return []
+                    
+                    memories = []
+                    for memory_file in sorted(MEMORY_DIR.glob("*.json")):
+                        try:
+                            data = json.loads(memory_file.read_text())
+                            memories.append({
+                                "key": data.get("key", memory_file.stem),
+                                "metadata": data.get("metadata", {}),
+                                "created_at": data.get("created_at"),
+                                "updated_at": data.get("updated_at"),
+                            })
+                        except Exception:
+                            memories.append({"key": memory_file.stem, "error": "Failed to read"})
+                    return memories
+
+                def update_memory(key, updater):
+                    '''Update a memory value using a function.
+                    
+                    Args:
+                        key: The memory identifier
+                        updater: A function that takes the current value and returns the new value
+                    
+                    Returns:
+                        The new value
+                    
+                    Example:
+                        # Append to a list
+                        update_memory("tasks", lambda tasks: tasks + ["New task"])
+                        
+                        # Update a dict
+                        update_memory("config", lambda c: {**c, "debug": True})
+                    '''
+                    current = load_memory(key, default=None)
+                    new_value = updater(current)
+                    save_memory(key, new_value)
+                    return new_value
+
+                def memory_exists(key):
+                    '''Check if a memory key exists.
+                    
+                    Args:
+                        key: The memory identifier
+                    
+                    Returns:
+                        True if the memory exists, False otherwise
+                    '''
+                    sanitized_key = _sanitize_memory_key(key)
+                    memory_file = MEMORY_DIR / f"{sanitized_key}.json"
+                    return memory_file.exists()
+
+                def get_memory_info(key):
+                    '''Get full memory info including metadata and timestamps.
+                    
+                    Args:
+                        key: The memory identifier
+                    
+                    Returns:
+                        Full memory data dict or None if not found
+                    '''
+                    sanitized_key = _sanitize_memory_key(key)
+                    memory_file = MEMORY_DIR / f"{sanitized_key}.json"
+                    
+                    if not memory_file.exists():
+                        return None
+                    
+                    try:
+                        return json.loads(memory_file.read_text())
+                    except Exception:
+                        return None
+
+                runtime_module.save_memory = save_memory
+                runtime_module.load_memory = load_memory
+                runtime_module.delete_memory = delete_memory
+                runtime_module.list_memories = list_memories
+                runtime_module.update_memory = update_memory
+                runtime_module.memory_exists = memory_exists
+                runtime_module.get_memory_info = get_memory_info
+                globals()["save_memory"] = save_memory
+                globals()["load_memory"] = load_memory
+                globals()["delete_memory"] = delete_memory
+                globals()["list_memories"] = list_memories
+                globals()["update_memory"] = update_memory
+                globals()["memory_exists"] = memory_exists
+                globals()["get_memory_info"] = get_memory_info
+
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
 
@@ -1009,11 +1148,16 @@ class RootlessContainerSandbox:
                     "Use `runtime.discovered_servers(detailed=True)` for descriptions. "
                     "Use `runtime.search_tool_docs('query')` to find tools. "
                     "Don't guess tool names; search first.\\n"
-                    "3. PERSISTENCE: You can save your own tools! Define a Python function and call `save_tool(func)`. "
-                    "It will be saved to `~/MCPs/user_tools.py` and auto-loaded in future sessions.\\n"
-                    "4. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
+                    "3. PERSISTENCE: Save custom tools with `save_tool(func)`. They persist across sessions.\\n"
+                    "4. MEMORY: Store/retrieve data across sessions:\\n"
+                    "   - `save_memory(key, value)` - Save any JSON-serializable data\\n"
+                    "   - `load_memory(key, default=None)` - Retrieve saved data\\n"
+                    "   - `list_memories()` - List all saved memories\\n"
+                    "   - `update_memory(key, lambda x: ...)` - Update existing memory\\n"
+                    "   - `delete_memory(key)` - Remove a memory\\n"
+                    "5. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
                     "query_tool_docs(server), describe_server(name).\\n"
-                    "5. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
+                    "6. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
                 )
 
                 _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)
@@ -1206,6 +1350,14 @@ class RootlessContainerSandbox:
                     "search_tool_docs_sync",
                     "search_tool_docs",
                     "capability_summary",
+                    "save_tool",
+                    "save_memory",
+                    "load_memory",
+                    "delete_memory",
+                    "list_memories",
+                    "update_memory",
+                    "memory_exists",
+                    "get_memory_info",
                 ]
 
                 servers_module.__all__ = []

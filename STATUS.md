@@ -21,6 +21,11 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 - Discovery helpers (`discovered_servers()`, `query_tool_docs()`, etc.) are
   advertised in a short sandbox summary so the LLM fetches tool metadata on
   demand instead of receiving every schema up front.
+- **Persistent Memory System** for cross-session state:
+  - `save_memory(key, value)` / `load_memory(key)` for data persistence
+  - `update_memory(key, fn)` for atomic read-modify-write
+  - `list_memories()` / `memory_exists(key)` for discovery
+  - Memory stored as JSON in `/projects/memory/` (maps to `~/MCPs/user_tools/memory/`)
 
 **Security Model:**
 - Network disabled (`--network none`)

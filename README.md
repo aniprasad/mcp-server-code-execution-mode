@@ -99,7 +99,7 @@ Result: constant overhead. Whether you manage 10 or 1000 tools, the system promp
 | Solves token bloat | ❌ Manual preload | ❌ Fixed catalog | ❌ Theory only | ✅ Discovery runtime |
 | Universal MCP proxying | ✅ Containers | ⚠️ Platform-specific | ❌ Not provided | ✅ Any stdio server |
 | Rootless security | ⚠️ Optional | ✅ V8 isolate | ❌ Not addressed | ✅ Cap-dropped sandbox |
-| Auto-discovery | ⚠️ Catalog-bound | ❌ N/A | ❌ Not implemented | ✅ 9 config paths |
+| Auto-discovery | ⚠️ Catalog-bound | ❌ N/A | ❌ Not implemented | ✅ 12+ config paths |
 | Tool doc search | ❌ | ❌ | ⚠️ Conceptual | ✅ `search_tool_docs()` |
 | Production hardening | ⚠️ Depends on you | ✅ Managed service | ❌ Prototype | ✅ Tested bridge |
 
@@ -202,6 +202,43 @@ This server aligns with the philosophy that [you might not need MCP at all](http
 - **Optional TOON** – set `MCP_BRIDGE_OUTPUT_MODE=toon` to emit [Token-Oriented Object Notation](https://github.com/toon-format/toon) blocks. We still drop empty fields and mirror the same structure in `structuredContent`; TOON is handy when you want deterministic tokenisation for downstream prompts.
 - **Fallback JSON** – if the TOON encoder is unavailable we automatically fall back to pretty JSON blocks while preserving the trimmed payload.
 
+### 🧠 Persistent Memory System
+
+- **Cross-session persistence** - Memory data survives container restarts and sessions
+- **JSON-based storage** - Flexible value types (strings, dicts, lists, etc.)
+- **Metadata support** - Add tags and custom metadata to memory entries
+- **Atomic updates** - Update memory values with custom functions
+- **Discovery-friendly** - List all memories and check existence
+
+```python
+# Save context for future sessions
+save_memory("project_context", {
+    "goal": "Build REST API",
+    "current_task": "Implement auth",
+    "decisions": ["Use JWT tokens", "PostgreSQL backend"]
+})
+
+# Retrieve in a later session
+context = load_memory("project_context")
+print(f"Working on: {context['current_task']}")
+
+# Update incrementally
+update_memory("project_context", lambda ctx: {
+    **ctx,
+    "decisions": ctx["decisions"] + ["Add rate limiting"]
+})
+
+# List all saved memories
+for mem in list_memories():
+    print(f"{mem['key']}: created {mem['created_at']}")
+
+# Check existence before loading
+if memory_exists("user_preferences"):
+    prefs = load_memory("user_preferences")
+```
+
+Memory files are stored in `/projects/memory/` inside the container, which maps to `~/MCPs/user_tools/memory/` on the host. This persists across sessions and container restarts.
+
 ### Discovery Workflow
 
 - `SANDBOX_HELPERS_SUMMARY` in the tool schema only advertises the discovery helpers (`discovered_servers()`, `list_servers()`, `query_tool_docs()`, `search_tool_docs()`, etc.). It never includes individual server or tool documentation.
@@ -215,8 +252,8 @@ This server aligns with the philosophy that [you might not need MCP at all](http
 
 ### 1. Prerequisites (macOS or Linux)
 
-- Check version: `python3 --version`
-- If needed, install Python 3.14 via package manager or [python.org](https://python.org)
+- Check version: `python3 --version` (Python 3.11+ required)
+- If needed, install Python via package manager or [python.org](https://python.org)
 - macOS: `brew install podman` or `brew install --cask docker`
 - Ubuntu/Debian: `sudo apt-get install -y podman` or `curl -fsSL https://get.docker.com | sh`
 
@@ -225,14 +262,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ```bash
-podman pull python:3.14-slim
+podman pull python:3.13-slim
 # or
-docker pull python:3.14-slim
+docker pull python:3.13-slim
 ```
 
-Note on Pydantic compatibility (Python 3.14):
+Note on Pydantic compatibility:
 
-- If you use Python 3.14, ensure you have a modern Pydantic release installed (for example, `pydantic >= 2.12.0`). Some older Pydantic versions or environments that install a separate `typing` package from PyPI may raise errors such as:
+- If you use Python 3.14+, ensure you have a modern Pydantic release installed (for example, `pydantic >= 2.12.0`). Some older Pydantic versions or environments that install a separate `typing` package from PyPI may raise errors such as:
 
 ```text
 TypeError: _eval_type() got an unexpected keyword argument 'prefer_fwd_module'
@@ -320,29 +357,24 @@ Note: server configurations can include an optional `cwd` property. If present t
 
 ## Testing
 
-Project environments target CPython 3.14. Ensure your local environment uses Python 3.14+:
+Project environments support CPython 3.11+. Ensure your local environment uses a compatible Python version:
 
 ```bash
-uv python pin 3.14
+uv python pin 3.13
 uv sync
 ```
 
-Runtime dependencies stay lean, so `pytest` is fetched on demand when needed:
+Runtime dependencies stay lean; dev dependencies (pytest, etc.) are available via the `dev` extra:
 
 ```bash
-uv run --with pytest pytest
-```
+# Install with dev dependencies
+uv sync --group dev
 
-Prefer a persistent install? Add a dev extra and sync it once:
-
-```toml
-[project.optional-dependencies]
-test = ["pytest>=9"]
-```
-
-```bash
-uv sync --group test
+# Run tests
 uv run pytest
+
+# Or run without installing dev dependencies permanently
+uv run --with pytest pytest
 ```
 
 ## Architecture
@@ -406,11 +438,26 @@ Unlike traditional MCP servers that preload every tool definition (sometimes 30k
 
 ### Server Discovery
 
-**Primary Location:**
+The bridge automatically discovers MCP servers from multiple configuration sources:
 
-- `~/MCPs/*.json` (Recommended)
+**Supported Locations:**
 
-> **Note:** Support for scanning individual agent configuration files (e.g., `.claude.json`, `.vscode/mcp.json`) is currently **postponed**. Please place all your MCP server definitions .jsons in the `~/MCPs` directory to ensure they are discovered.
+| Location | Name | Priority |
+|----------|------|----------|
+| `~/MCPs/` | User MCPs | Highest |
+| `~/.config/mcp/servers/` | Standard MCP | |
+| `./mcp-servers/` | Local Project | |
+| `./.vscode/mcp.json` | VS Code Workspace | |
+| `~/.claude.json` | Claude CLI | |
+| `~/.cursor/mcp.json` | Cursor | |
+| `~/.opencode.json` | OpenCode CLI | |
+| `~/.codeium/windsurf/mcp_config.json` | Windsurf | |
+| `~/Library/Application Support/Claude Code/claude_code_config.json` | Claude Code (macOS) | |
+| `~/Library/Application Support/Claude/claude_desktop_config.json` | Claude Desktop (macOS) | |
+| `~/Library/Application Support/Code/User/settings.json` | VS Code Global (macOS) | |
+| `~/.config/Code/User/settings.json` | VS Code Global (Linux) | Lowest |
+
+> **Note:** Earlier sources take precedence. If the same server is defined in multiple locations, the first one wins.
 
 **Example Server** (`~/MCPs/filesystem.json`):
 
@@ -423,9 +470,9 @@ Unlike traditional MCP servers that preload every tool definition (sometimes 30k
     }
   }
 }
+```
 
 > **Note:** To prevent recursive launches, the bridge automatically skips any config entry that appears to start `mcp-server-code-execution-mode` again (including `uvx … mcp-server-code-execution-mode run`). Set `MCP_BRIDGE_ALLOW_SELF_SERVER=1` if you intentionally need to expose the bridge as a nested MCP server.
-```
 
 ### Docker MCP Gateway Integration
 

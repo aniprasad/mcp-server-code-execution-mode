@@ -49,18 +49,18 @@ newgrp docker
 
 ```bash
 # Pull image
-podman pull python:3.14-slim
+podman pull python:3.13-slim
 
 # Or with Docker
-docker pull python:3.14-slim
+docker pull python:3.13-slim
 
 # Verify
-podman images python:3.14-slim
+podman images python:3.13-slim
 ```
 
-Note on Pydantic compatibility (Python 3.14):
+Note on Pydantic compatibility:
 
-- If you use Python 3.14, ensure you have a modern Pydantic release installed (for example, `pydantic >= 2.12.0`). Some older Pydantic versions or environments that install a separate `typing` package from PyPI may raise errors such as:
+- If you use Python 3.14+, ensure you have a modern Pydantic release installed (for example, `pydantic >= 2.12.0`). Some older Pydantic versions or environments that install a separate `typing` package from PyPI may raise errors such as:
 
 ```
 TypeError: _eval_type() got an unexpected keyword argument 'prefer_fwd_module'
@@ -488,6 +488,84 @@ Selectable via RPC: ('stub',)
 
 ## Advanced Topics
 
+### Persistent Memory System
+
+The bridge provides a built-in memory system for persisting information across sessions. Memory is stored as JSON files in `/projects/memory/` inside the container, which maps to `~/MCPs/user_tools/memory/` on the host.
+
+#### Core Memory Functions
+
+```python
+# Save any JSON-serializable value with optional metadata
+save_memory("project_context", {
+    "goal": "Build REST API",
+    "current_task": "Implement auth",
+    "decisions": ["Use JWT", "PostgreSQL"]
+}, metadata={"tags": ["important"]})
+
+# Load a value (returns default if not found)
+context = load_memory("project_context")
+context = load_memory("nonexistent", default={})
+
+# Delete a memory entry
+delete_memory("outdated_info")
+
+# Check if a memory exists
+if memory_exists("user_preferences"):
+    prefs = load_memory("user_preferences")
+```
+
+#### Listing and Inspecting Memories
+
+```python
+# List all saved memories
+for mem in list_memories():
+    print(f"{mem['key']}: created {mem['created_at']}")
+    print(f"  metadata: {mem['metadata']}")
+
+# Get full info about a specific memory (includes value)
+info = get_memory_info("project_context")
+print(f"Value: {info['value']}")
+print(f"Created: {info['created_at']}, Updated: {info['updated_at']}")
+```
+
+#### Atomic Updates
+
+Use `update_memory` for read-modify-write operations:
+
+```python
+# Increment a counter
+update_memory("call_count", lambda x: (x or 0) + 1)
+
+# Append to a list
+update_memory("task_log", lambda log: (log or []) + [{"task": "auth", "status": "done"}])
+
+# Update nested data
+update_memory("project_context", lambda ctx: {
+    **(ctx or {}),
+    "current_task": "Implement rate limiting",
+    "decisions": (ctx or {}).get("decisions", []) + ["Add Redis cache"]
+})
+```
+
+#### Memory Use Cases
+
+1. **Session Continuity**: Save conversation context, decisions, and progress
+2. **Learning**: Store successful patterns and past solutions
+3. **Configuration**: Persist user preferences and project settings
+4. **State Machines**: Track workflow progress across multiple calls
+5. **Caching**: Store expensive computation results
+
+#### Memory vs. User Tools
+
+| Feature | Memory | User Tools (`save_tool`) |
+|---------|--------|-------------------------|
+| **Storage** | JSON data | Python functions |
+| **Purpose** | State, context, data | Reusable code |
+| **Access** | `load_memory()` | `import` or call directly |
+| **Location** | `/projects/memory/` | `/projects/user_tools.py` |
+
+Both persist to the same host directory (`~/MCPs/user_tools/`) and survive container restarts.
+
 ### Custom Timeout Per Call
 
 ```python
@@ -550,16 +628,16 @@ Error: No container runtime found
 
 **Problem:**
 ```
-Error: Failed to pull image python:3.14-slim
+Error: Failed to pull image python:3.13-slim
 ```
 
 **Solution:**
 ```bash
 # Manually pull
-podman pull python:3.14-slim
+podman pull python:3.13-slim
 
 # Or use different image
-export MCP_BRIDGE_IMAGE=python:3.14-slim
+export MCP_BRIDGE_IMAGE=python:3.13-slim
 ```
 
 ### Gateway Servers Fail to Initialize
@@ -671,7 +749,7 @@ export MCP_BRIDGE_PIDS=256
 
 **Solutions:**
 1. Keep podman machine running (avoid shutdown)
-2. Use local image: `podman pull python:3.14-slim`
+2. Use local image: `podman pull python:3.13-slim`
 3. Consider caching strategies
 4. Reuse containers (not currently supported)
 

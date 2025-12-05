@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -22,9 +24,10 @@ async def test_sandbox_init_no_runtime():
 
         # Should not crash on init
 
-        # Should crash on execute
-        with pytest.raises(SandboxError, match="No container runtime found"):
-            await sandbox.execute("print('hello')")
+        # Should crash on execute (need to provide host_dir to reach runtime check)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with pytest.raises(SandboxError, match="No container runtime found"):
+                await sandbox.execute("print('hello')", host_dir=Path(tmpdir))
 
         # Should crash on _base_cmd
         with pytest.raises(SandboxError, match="No container runtime found"):
