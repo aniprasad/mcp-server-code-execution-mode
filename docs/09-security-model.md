@@ -163,7 +163,9 @@ socket.socket().connect(("evil.com", 80))
 │   /tmp                 │  Read/Write│  64MB tmpfs, noexec                │
 │   /workspace           │  Read/Write│  128MB tmpfs, noexec               │
 │   /ipc                 │  Read/Write│  Mounted from host (entrypoint)    │
-│   /projects            │  Read/Write│  Mounted for persistence           │
+│   /projects/memory     │  Read/Write│  Persistent memory (~/MCPs/memory) │
+│   /projects/user_tools.py│  Read/Write│  Saved functions (~/MCPs/user_tools.py)│
+│   /projects/execution  │  Read/Write│  Execution artifacts (LRU)         │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

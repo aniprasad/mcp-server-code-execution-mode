@@ -25,7 +25,7 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
   - `save_memory(key, value)` / `load_memory(key)` for data persistence
   - `update_memory(key, fn)` for atomic read-modify-write
   - `list_memories()` / `memory_exists(key)` for discovery
-  - Memory stored as JSON in `/projects/memory/` (maps to `~/MCPs/user_tools/memory/`)
+  - Memory stored as JSON in `/projects/memory/` (maps to `~/MCPs/memory/`)
 
 **Security Model:**
 - Network disabled (`--network none`)
@@ -59,6 +59,13 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 - Handle cleanup to prevent ResourceWarning on process termination
 - Volume sharing probes for Podman machine compatibility
 - LRU cleanup for IPC directories (max 50 retained)
+
+**Execution Artifacts:**
+- Per-execution folder for images, data files, and logs
+- Auto-save `code.py` and `output.txt` for each run
+- `save_image()` helper for matplotlib/PIL with file:// URLs
+- `save_file()` helper for any text/binary data
+- LRU cleanup (max 50 execution folders retained)
 
 ### 🔄 In Progress
 

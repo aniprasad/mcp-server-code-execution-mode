@@ -13,7 +13,8 @@ The entrypoint script is the "operating system" for the sandbox. It provides:
 | **RPC Mechanism** | Send requests to host, wait for responses |
 | **MCP Modules** | Fake `mcp.runtime` and `mcp.servers` packages |
 | **MCP Proxies** | `mcp_weather`, `mcp_soccer`, etc. |
-| **Runtime Helpers** | `save_memory()`, `save_tool()`, etc. |
+| **Memory Helpers** | `save_memory()`, `load_memory()`, `save_tool()` |
+| **Artifact Helpers** | `save_image()`, `save_file()`, `execution_folder()` |
 | **Main Loop** | Wait for code, execute, repeat |
 
 ---
@@ -55,8 +56,9 @@ DISCOVERED_SERVERS = {
 }
 
 # Paths for persistence
-USER_TOOLS_PATH = Path("/projects/user_tools.py")
+USER_TOOLS_PATH = Path("/projects/user_tools.py")  # At root, separate from data
 MEMORY_DIR = Path("/projects/memory")
+EXECUTION_DIR = Path("/projects/execution")  # Current execution's artifact folder
 
 # RPC tracking
 _PENDING_RESPONSES = {}
@@ -351,13 +353,85 @@ def update_memory(key, updater):
 def save_tool(func):
     """Save a function for future sessions."""
     source = inspect.getsource(func)
-    USER_TOOLS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # File is at /projects/user_tools.py, mounted from ~/MCPs/user_tools.py
     
     # Append to user_tools.py
     with open(USER_TOOLS_PATH, "a") as f:
         f.write(f"\n\n{source}")
     
     return f"Tool '{func.__name__}' saved."
+```
+
+### Execution Artifacts
+
+Save files and images to the current execution's folder (auto-cleaned with LRU, max 50 executions):
+
+```python
+def save_image(image, name=None, format="PNG"):
+    """
+    Save a PIL Image or matplotlib figure.
+    
+    Args:
+        image: PIL.Image, matplotlib figure, or bytes
+        name: Filename (optional, auto-generated if not provided)
+        format: Image format (PNG, JPEG, etc.)
+    
+    Returns:
+        str: Full path to the saved image
+    """
+    images_dir = EXECUTION_DIR / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Auto-generate name if not provided
+    if name is None:
+        existing = list(images_dir.glob(f"*.{format.lower()}"))
+        name = f"image_{len(existing) + 1}.{format.lower()}"
+    
+    filepath = images_dir / name
+    # Handle PIL images, matplotlib figures, or raw bytes
+    # ... (actual implementation handles all types)
+    return str(filepath)
+
+
+def save_file(content, name, subdir="data"):
+    """
+    Save any file content (text, binary, JSON).
+    
+    Args:
+        content: str, bytes, or JSON-serializable object
+        name: Filename with extension
+        subdir: Subdirectory in execution folder (default: "data")
+    
+    Returns:
+        str: Full path to the saved file
+    """
+    target_dir = EXECUTION_DIR / subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filepath = target_dir / name
+    # ... write content based on type
+    return str(filepath)
+
+
+def list_execution_files():
+    """List all files saved in current execution folder."""
+    return [str(f) for f in EXECUTION_DIR.rglob("*") if f.is_file()]
+
+
+def execution_folder():
+    """Get the path to current execution folder."""
+    return str(EXECUTION_DIR)
+```
+
+**Usage Example:**
+```python
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots()
+ax.plot([1, 2, 3], [4, 5, 6])
+path = save_image(fig, "my_chart.png")
+print(f"Saved to: {path}")
+# → /projects/execution/images/my_chart.png
+
+# On host: ~/MCPs/executions/001_2025-01-25T12.30.45/images/my_chart.png
 ```
 
 ---
@@ -459,6 +533,10 @@ _GLOBAL_NAMESPACE["LOADED_MCP_SERVERS"] = LOADED_MCP_SERVERS
 _GLOBAL_NAMESPACE["save_memory"] = save_memory
 _GLOBAL_NAMESPACE["load_memory"] = load_memory
 _GLOBAL_NAMESPACE["save_tool"] = save_tool
+_GLOBAL_NAMESPACE["save_image"] = save_image
+_GLOBAL_NAMESPACE["save_file"] = save_file
+_GLOBAL_NAMESPACE["list_execution_files"] = list_execution_files
+_GLOBAL_NAMESPACE["execution_folder"] = execution_folder
 # ...
 ```
 
@@ -466,6 +544,8 @@ Now when LLM code executes, it can access:
 - `mcp_weather` - Proxy for weather server
 - `mcp_soccer` - Proxy for soccer server
 - `save_memory()` - Direct access to helper
+- `save_image()` - Save images to execution folder
+- `save_file()` - Save files to execution folder
 - `mcp.runtime` - Can import the module
 
 ---

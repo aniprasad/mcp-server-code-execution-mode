@@ -240,9 +240,9 @@ async def generate_api_docs(output_path: Optional[Path] = None) -> Dict[str, Any
         tools = server_info.get("tools", [])
         error = server_info.get("error")
         if error:
-            print(f"[{server_name}] ❌ {error}")
+            print(f"[{server_name}] ERROR: {error}")
         else:
-            print(f"[{server_name}] ✓ {len(tools)} tools")
+            print(f"[{server_name}] OK - {len(tools)} tools")
             for tool in tools:
                 params = ", ".join(tool.get("params", []))
                 print(f"  - {tool['name']}({params})")

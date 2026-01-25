@@ -237,7 +237,7 @@ if memory_exists("user_preferences"):
     prefs = load_memory("user_preferences")
 ```
 
-Memory files are stored in `/projects/memory/` inside the container, which maps to `~/MCPs/user_tools/memory/` on the host. This persists across sessions and container restarts.
+Memory files are stored in `/projects/memory/` inside the container, which maps to `~/MCPs/memory/` on the host. This persists across sessions and container restarts.
 
 ### Discovery Workflow
 
@@ -529,7 +529,27 @@ When you rely on `docker mcp gateway run` to expose third-party MCP servers, the
 
 ### State Directory & Volume Sharing
 
-- Runtime artifacts (including the generated `/ipc/entrypoint.py` and related handshake metadata) live under `~/MCPs/` by default. Set `MCP_BRIDGE_STATE_DIR` to relocate them.
+Runtime artifacts live under `~/MCPs/` by default. Set `MCP_BRIDGE_STATE_DIR` to relocate them.
+
+**Directory Structure:**
+
+```
+~/MCPs/
+├── memory/                 # Persistent cross-session data
+│   └── *.json             # save_memory() data files
+├── user_tools.py          # save_tool() custom functions
+├── executions/            # Per-execution artifacts (LRU, max 50)
+│   └── 001_2025-01-25.../
+│       ├── code.py        # Auto-saved executed code
+│       ├── output.txt     # Auto-saved stdout/stderr
+│       ├── images/        # save_image() output
+│       └── data/          # save_file() output
+├── mcp-servers.json       # User MCP server config
+└── mcp-tools.md           # Generated API docs
+```
+
+**Volume Sharing Notes:**
+
 - When the selected runtime is Podman, the bridge automatically issues `podman machine set --rootful --now --volume <state_dir>:<state_dir>` so the VM can mount the directory. On older `podman machine` builds that do not support `--volume`, the bridge now probes the VM with `podman machine ssh test -d <state_dir>` and proceeds if the share is already available.
 - Docker Desktop does not expose a CLI for file sharing; ensure the chosen state directory is marked as shared in Docker Desktop → Settings → Resources → File Sharing before running the bridge.
 - To verify a share manually, run `docker run --rm -v ~/MCPs:/ipc alpine ls /ipc` (or the Podman equivalent) and confirm the files are visible.

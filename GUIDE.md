@@ -544,7 +544,7 @@ Selectable via RPC: ('stub',)
 
 ### Persistent Memory System
 
-The bridge provides a built-in memory system for persisting information across sessions. Memory is stored as JSON files in `/projects/memory/` inside the container, which maps to `~/MCPs/user_tools/memory/` on the host.
+The bridge provides a built-in memory system for persisting information across sessions. Memory is stored as JSON files in `/projects/memory/` inside the container, which maps to `~/MCPs/memory/` on the host.
 
 #### Core Memory Functions
 
@@ -616,9 +616,75 @@ update_memory("project_context", lambda ctx: {
 | **Storage** | JSON data | Python functions |
 | **Purpose** | State, context, data | Reusable code |
 | **Access** | `load_memory()` | `import` or call directly |
-| **Location** | `/projects/memory/` | `/projects/user_tools.py` |
+| **Container Path** | `/projects/memory/*.json` | `/projects/user_tools.py` |
+| **Host Path** | `~/MCPs/memory/` | `~/MCPs/user_tools.py` |
 
-Both persist to the same host directory (`~/MCPs/user_tools/`) and survive container restarts.
+### Execution Artifacts
+
+Each code execution creates a temporary folder for artifacts like images, data files, and logs. These are kept for 50 executions (LRU), then automatically cleaned up.
+
+#### Folder Structure
+
+```
+~/MCPs/executions/
+├── 001_2026-01-25_143022/     # Execution 1
+│   ├── code.py                 # Auto-saved: the code that ran
+│   ├── output.txt              # Auto-saved: stdout + stderr
+│   ├── images/                 # Charts, plots (save_image)
+│   │   └── chart.png
+│   └── data/                   # Data files (save_file)
+│       └── results.csv
+├── 002_2026-01-25_143156/     # Execution 2
+│   └── ...
+└── ...                        # Max 50 folders (LRU cleanup)
+```
+
+#### Saving Images
+
+```python
+import matplotlib.pyplot as plt
+
+# Create a chart
+plt.figure(figsize=(8, 4))
+plt.bar(["Seattle", "Portland", "SF"], [45, 48, 55])
+plt.ylabel("Temperature °F")
+
+# Save and get clickable file:// URL
+url = save_image("weather.png", plt)
+print(f"Chart saved: {url}")
+# → file:///C:/Users/you/MCPs/executions/042_.../images/weather.png
+```
+
+#### Saving Files
+
+```python
+# Save CSV data
+csv_content = "city,temp\\nSeattle,45\\nPortland,48"
+url = save_file("results.csv", csv_content)
+print(f"Data saved: {url}")
+
+# Save JSON
+import json
+url = save_file("analysis.json", json.dumps({"status": "complete"}))
+```
+
+#### Auto-Saved Files
+
+Every execution automatically saves:
+- **`code.py`** - The exact code that was executed
+- **`output.txt`** - Combined stdout and stderr
+
+These are useful for debugging and reviewing past executions.
+
+#### Memory vs. Artifacts
+
+| Feature | Memory | Execution Artifacts |
+|---------|--------|---------------------|
+| **Lifespan** | Permanent (until deleted) | Temporary (LRU, 50 max) |
+| **Purpose** | Cross-session data | Per-execution files |
+| **Content** | JSON data | Any files (images, CSV, etc.) |
+| **Location** | `~/MCPs/memory/` | `~/MCPs/executions/<id>/` |
+| **Use when** | "Remember this" | "Save this chart" |
 
 ### Custom Timeout Per Call
 

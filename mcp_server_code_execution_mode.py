@@ -853,6 +853,7 @@ class RootlessContainerSandbox:
             import asyncio
             import inspect
             import json
+            import os
             import sys
             import traceback
             import types
@@ -863,6 +864,8 @@ class RootlessContainerSandbox:
             DISCOVERED_SERVERS = json.loads(__DISCOVERED_JSON__)
             USER_TOOLS_PATH = Path("/projects/user_tools.py")
             MEMORY_DIR = Path("/projects/memory")
+            EXECUTION_DIR = Path("/projects/execution")
+            HOST_EXECUTION_PATH = os.environ.get("MCP_HOST_EXECUTION_PATH", "")
 
             _PENDING_RESPONSES = {}
             _REQUEST_COUNTER = 0
@@ -972,7 +975,7 @@ class RootlessContainerSandbox:
                         raise ValueError("save_tool expects a function")
                     
                     source = inspect.getsource(func)
-                    USER_TOOLS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    # File is at /projects/user_tools.py, parent /projects always exists
                     
                     with open(USER_TOOLS_PATH, "a") as f:
                         f.write("\\n\\n")
@@ -1172,6 +1175,135 @@ class RootlessContainerSandbox:
                 globals()["memory_exists"] = memory_exists
                 globals()["get_memory_info"] = get_memory_info
 
+                # --- Execution Artifacts ---
+                def _get_host_file_url(container_path):
+                    '''Convert a container path to a host file:// URL.'''
+                    if not HOST_EXECUTION_PATH:
+                        return str(container_path)
+                    # Convert /projects/execution/... to host path
+                    rel_path = str(container_path).replace("/projects/execution/", "")
+                    # Handle Windows paths
+                    host_path = os.path.join(HOST_EXECUTION_PATH, rel_path)
+                    # Convert to file:// URL
+                    if os.name == 'nt' or HOST_EXECUTION_PATH.startswith(('C:', 'D:', 'E:')):
+                        # Windows path
+                        return f"file:///{host_path.replace(chr(92), '/')}"
+                    else:
+                        return f"file://{host_path}"
+
+                def execution_folder():
+                    '''Get the current execution folder path (inside container).
+                    
+                    Returns:
+                        Path object pointing to /projects/execution/
+                    
+                    Example:
+                        folder = execution_folder()
+                        custom_file = folder / "my_data.txt"
+                    '''
+                    return EXECUTION_DIR
+
+                def save_image(filename, figure_or_bytes, *, format=None):
+                    '''Save a matplotlib figure or image bytes to the execution folder.
+                    
+                    Args:
+                        filename: Name of the image file (e.g., "chart.png")
+                        figure_or_bytes: Either a matplotlib Figure, PIL Image, or bytes
+                        format: Image format (auto-detected from filename if not specified)
+                    
+                    Returns:
+                        A file:// URL that can be opened in the browser
+                    
+                    Example:
+                        import matplotlib.pyplot as plt
+                        plt.plot([1, 2, 3], [4, 5, 6])
+                        url = save_image("chart.png", plt)
+                        print(f"Chart saved: {url}")
+                    '''
+                    import io
+                    images_dir = EXECUTION_DIR / "images"
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    filepath = images_dir / filename
+                    
+                    # Handle different input types
+                    if hasattr(figure_or_bytes, 'savefig'):
+                        # Matplotlib figure or pyplot
+                        figure_or_bytes.savefig(filepath, format=format, bbox_inches='tight')
+                        if hasattr(figure_or_bytes, 'close'):
+                            figure_or_bytes.close()
+                    elif hasattr(figure_or_bytes, 'save'):
+                        # PIL Image
+                        figure_or_bytes.save(filepath, format=format)
+                    elif isinstance(figure_or_bytes, bytes):
+                        # Raw bytes
+                        filepath.write_bytes(figure_or_bytes)
+                    else:
+                        raise TypeError(f"Cannot save {type(figure_or_bytes).__name__} as image")
+                    
+                    return _get_host_file_url(filepath)
+
+                def save_file(filename, content, *, subdir="data"):
+                    '''Save a file to the execution folder.
+                    
+                    Args:
+                        filename: Name of the file (e.g., "results.csv", "output.json")
+                        content: String or bytes content to save
+                        subdir: Subdirectory within execution folder ("data", "images", or "")
+                    
+                    Returns:
+                        A file:// URL that can be opened
+                    
+                    Example:
+                        url = save_file("results.csv", csv_string)
+                        print(f"Data saved: {url}")
+                    '''
+                    if subdir:
+                        target_dir = EXECUTION_DIR / subdir
+                    else:
+                        target_dir = EXECUTION_DIR
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    filepath = target_dir / filename
+                    
+                    if isinstance(content, bytes):
+                        filepath.write_bytes(content)
+                    else:
+                        filepath.write_text(str(content))
+                    
+                    return _get_host_file_url(filepath)
+
+                def list_execution_files():
+                    '''List all files saved in the current execution folder.
+                    
+                    Returns:
+                        Dict with 'images' and 'data' keys listing files
+                    '''
+                    result = {"images": [], "data": [], "other": []}
+                    
+                    images_dir = EXECUTION_DIR / "images"
+                    if images_dir.exists():
+                        result["images"] = [f.name for f in images_dir.iterdir() if f.is_file()]
+                    
+                    data_dir = EXECUTION_DIR / "data"
+                    if data_dir.exists():
+                        result["data"] = [f.name for f in data_dir.iterdir() if f.is_file()]
+                    
+                    for f in EXECUTION_DIR.iterdir():
+                        if f.is_file():
+                            result["other"].append(f.name)
+                    
+                    return result
+
+                runtime_module.execution_folder = execution_folder
+                runtime_module.save_image = save_image
+                runtime_module.save_file = save_file
+                runtime_module.list_execution_files = list_execution_files
+                globals()["execution_folder"] = execution_folder
+                globals()["save_image"] = save_image
+                globals()["save_file"] = save_file
+                globals()["list_execution_files"] = list_execution_files
+
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
 
@@ -1189,9 +1321,13 @@ class RootlessContainerSandbox:
                     "   - `list_memories()` - List all saved memories\\n"
                     "   - `update_memory(key, lambda x: ...)` - Update existing memory\\n"
                     "   - `delete_memory(key)` - Remove a memory\\n"
-                    "5. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
+                    "5. ARTIFACTS: Save files from this execution (auto-cleaned after 50 runs):\\n"
+                    "   - `save_image('chart.png', plt)` - Save matplotlib figure, returns file:// URL\\n"
+                    "   - `save_file('data.csv', content)` - Save text/bytes, returns file:// URL\\n"
+                    "   - `list_execution_files()` - List saved artifacts\\n"
+                    "6. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
                     "query_tool_docs(server), describe_server(name).\\n"
-                    "6. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
+                    "7. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
                 )
 
                 _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)
@@ -2037,6 +2173,9 @@ def detect_runtime(preferred: Optional[str] = None) -> Optional[str]:
 class SandboxInvocation:
     """Context manager that prepares IPC resources for a sandbox invocation."""
 
+    # Class-level counter for execution IDs
+    _execution_counter: int = 0
+
     def __init__(self, bridge: "MCPBridge", active_servers: Sequence[str]) -> None:
         self.bridge = bridge
         self.active_servers = list(dict.fromkeys(active_servers))
@@ -2047,6 +2186,10 @@ class SandboxInvocation:
         self.server_metadata: List[Dict[str, object]] = []
         self.allowed_servers: set[str] = set()
         self.discovered_servers: Dict[str, str] = {}
+        # Execution artifacts
+        self.execution_id: str = ""
+        self.execution_dir: Optional[Path] = None
+        self.host_execution_path: str = ""
 
     async def __aenter__(self) -> "SandboxInvocation":
         self.server_metadata = []
@@ -2069,9 +2212,29 @@ class SandboxInvocation:
         base_dir = base_dir.resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create user_tools directory
-        user_tools_dir = base_dir / "user_tools"
-        user_tools_dir.mkdir(parents=True, exist_ok=True)
+        # Create memory directory (persistent, no LRU)
+        memory_dir = base_dir / "memory"
+        memory_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create executions directory and per-execution folder
+        executions_dir = base_dir / "executions"
+        executions_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate execution ID and create folder
+        SandboxInvocation._execution_counter += 1
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        self.execution_id = f"{SandboxInvocation._execution_counter:03d}_{timestamp}"
+        self.execution_dir = executions_dir / self.execution_id
+        self.execution_dir.mkdir(parents=True, exist_ok=True)
+        (self.execution_dir / "images").mkdir(exist_ok=True)
+        (self.execution_dir / "data").mkdir(exist_ok=True)
+        
+        # Store host path for file:// URLs
+        self.host_execution_path = str(self.execution_dir.resolve())
+        
+        # LRU cleanup for executions (keep max 50)
+        _cleanup_stale_executions(executions_dir, max_dirs=50)
 
         ensure_share = getattr(self.bridge.sandbox, "ensure_shared_directory", None)
         if ensure_share:
@@ -2090,7 +2253,12 @@ class SandboxInvocation:
         self.host_dir = host_dir
 
         self.volume_mounts.append(f"{host_dir}:/ipc:rw")
-        self.volume_mounts.append(f"{user_tools_dir}:/projects:rw")
+        self.volume_mounts.append(f"{memory_dir}:/projects/memory:rw")
+        self.volume_mounts.append(f"{self.execution_dir}:/projects/execution:rw")
+        # Mount user_tools.py at root (separate from memory data)
+        user_tools_file = memory_dir.parent / "user_tools.py"
+        user_tools_file.touch(exist_ok=True)  # Ensure file exists for mount
+        self.volume_mounts.append(f"{user_tools_file}:/projects/user_tools.py:rw")
 
         self.container_env["MCP_AVAILABLE_SERVERS"] = json.dumps(
             self.server_metadata,
@@ -2100,6 +2268,8 @@ class SandboxInvocation:
             self.discovered_servers,
             separators=(",", ":"),
         )
+        # Pass host execution path for file:// URLs
+        self.container_env["MCP_HOST_EXECUTION_PATH"] = self.host_execution_path
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -2688,6 +2858,15 @@ class MCPBridge:
 
         logger.info("execute_code: entering SandboxInvocation")
         async with SandboxInvocation(self, requested_servers) as invocation:
+            # Auto-save code.py to execution folder
+            if invocation.execution_dir:
+                try:
+                    code_file = invocation.execution_dir / "code.py"
+                    code_file.write_text(code, encoding="utf-8")
+                    logger.debug("Saved code.py to %s", code_file)
+                except Exception as e:
+                    logger.debug("Failed to save code.py: %s", e)
+            
             logger.info("execute_code: SandboxInvocation ready, calling execute")
             sandbox_obj = cast(SandboxLike, self.sandbox)
             result = await sandbox_obj.execute(
@@ -2701,6 +2880,24 @@ class MCPBridge:
                 rpc_handler=invocation.handle_rpc,
             )
             logger.info("execute_code: sandbox.execute complete")
+            
+            # Auto-save output.txt to execution folder
+            if invocation.execution_dir:
+                try:
+                    output_file = invocation.execution_dir / "output.txt"
+                    output_content = []
+                    if result.stdout:
+                        output_content.append("=== STDOUT ===")
+                        output_content.append(result.stdout)
+                    if result.stderr:
+                        output_content.append("\n=== STDERR ===")
+                        output_content.append(result.stderr)
+                    if not result.success:
+                        output_content.append(f"\n=== EXIT CODE: {result.exit_code} ===")
+                    output_file.write_text("\n".join(output_content), encoding="utf-8")
+                    logger.debug("Saved output.txt to %s", output_file)
+                except Exception as e:
+                    logger.debug("Failed to save output.txt: %s", e)
 
         if not result.success:
             raise SandboxError(
@@ -2762,6 +2959,48 @@ def _cleanup_stale_ipc_dirs(max_dirs: int = 50) -> None:
             logger.info("LRU cleanup: removed %d old IPC directories (keeping %d)", count, max_dirs)
     except Exception as e:
         logger.debug("IPC cleanup error (non-fatal): %s", e)
+
+
+def _cleanup_stale_executions(executions_dir: Path, max_dirs: int = 50) -> None:
+    """Remove old execution directories using LRU policy.
+    
+    Keeps the most recent `max_dirs` execution folders, removes the oldest ones.
+    This bounds disk usage while preserving recent executions for review.
+    """
+    try:
+        if not executions_dir.exists():
+            return
+        
+        # Find all execution directories with their modification times
+        exec_dirs: List[Tuple[Path, float]] = []
+        for item in executions_dir.iterdir():
+            if item.is_dir():
+                try:
+                    mtime = item.stat().st_mtime
+                    exec_dirs.append((item, mtime))
+                except Exception:
+                    pass
+        
+        # If under limit, nothing to do
+        if len(exec_dirs) <= max_dirs:
+            return
+        
+        # Sort by mtime (oldest first) and remove excess
+        exec_dirs.sort(key=lambda x: x[1])
+        to_remove = len(exec_dirs) - max_dirs
+        count = 0
+        
+        for item, _ in exec_dirs[:to_remove]:
+            try:
+                shutil.rmtree(item, ignore_errors=True)
+                count += 1
+            except Exception:
+                pass  # Best effort cleanup
+        
+        if count > 0:
+            logger.info("LRU cleanup: removed %d old execution directories (keeping %d)", count, max_dirs)
+    except Exception as e:
+        logger.debug("Execution cleanup error (non-fatal): %s", e)
 
 
 async def _get_server_names() -> List[str]:

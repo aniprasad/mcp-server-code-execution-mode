@@ -31,14 +31,22 @@ def create_directory_structure(mcps_dir: Path, verbose: bool = True) -> None:
     """Create the MCPs directory structure."""
     directories = [
         mcps_dir,
-        mcps_dir / "user_tools",
-        mcps_dir / "user_tools" / "memory",
+        mcps_dir / "memory",           # Persistent memory (save_memory/load_memory)
+        mcps_dir / "executions",       # Per-execution artifacts (LRU, max 50)
     ]
     
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
         if verbose:
             print(f"✓ Created: {directory}")
+    
+    # Create user_tools.py at root (separate from memory data)
+    # Write header if file doesn't exist OR is empty (0 bytes)
+    user_tools_file = mcps_dir / "user_tools.py"
+    if not user_tools_file.exists() or user_tools_file.stat().st_size == 0:
+        user_tools_file.write_text("# User-defined tools saved via save_tool()\n# This file is auto-loaded at sandbox startup\n")
+        if verbose:
+            print(f"✓ Created: {user_tools_file}")
 
 
 def copy_example_configs(mcps_dir: Path, force: bool = False, verbose: bool = True) -> None:

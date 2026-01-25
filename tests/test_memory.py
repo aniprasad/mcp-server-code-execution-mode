@@ -284,6 +284,13 @@ class EntrypointMemoryCodeTests(unittest.TestCase):
 
         self.assertIn("MEMORY_DIR = Path(\"/projects/memory\")", entrypoint)
 
+    def test_entrypoint_defines_user_tools_path(self):
+        """Verify USER_TOOLS_PATH is at root /projects/, not inside memory."""
+        sandbox = bridge_module.RootlessContainerSandbox()
+        entrypoint = sandbox._render_entrypoint([], {})
+
+        self.assertIn("USER_TOOLS_PATH = Path(\"/projects/user_tools.py\")", entrypoint)
+
     def test_capability_summary_mentions_memory(self):
         """Verify the capability summary mentions memory functions."""
         sandbox = bridge_module.RootlessContainerSandbox()
