@@ -53,7 +53,7 @@ mcp-server-code-execution-mode/
 ├── servers/                             # Example MCP servers
 │   ├── _template.py                     # Template for new servers
 │   ├── weather.py                       # Weather API server
-│   ├── soccer.py                        # Soccer/football API server
+│   ├── sports.py                        # Multi-sport API server (ESPN)
 │   └── schemas.py                       # Pydantic output schemas
 ├── .github/agents/                      # VS Code Copilot agent configuration
 │   └── python-sandbox.agent.md          # Agent instructions

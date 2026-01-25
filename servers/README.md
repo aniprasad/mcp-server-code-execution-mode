@@ -15,8 +15,8 @@ This directory contains standalone MCP servers that can be used with mcp-server-
 servers/
 ├── _template.py      # Copy this to start a new server
 ├── schemas.py        # Shared Pydantic models for output types
-├── weather.py        # Example: weather API
-├── soccer.py         # Example: live soccer matches
+├── weather.py        # Weather API (Open-Meteo, free)
+├── sports.py         # Sports API (ESPN, free)
 ├── requirements.txt  # Dependencies
 └── README.md
 ```
@@ -24,16 +24,34 @@ servers/
 ## Usage in Sandbox
 
 ```python
-# Pass servers=["weather", "soccer"] to load them
+# Pass servers=["weather", "sports"] to load them
 weather = await mcp_weather.get_weather(city="Seattle")
-matches = await mcp_soccer.get_live_matches()
+games = await mcp_sports.scoreboard(sport="nba")
 
-# Match data has consistent structure:
-for match in matches:
-    # Get weather for each venue
-    venue_weather = await mcp_weather.get_weather(city=match['venue'])
-    print(f"{match['home']} vs {match['away']} - {venue_weather['conditions']}")
+# Combine data across servers:
+for game in games["games"]:
+    if game["status"] == "SCHEDULED":
+        # Get weather for the venue city
+        city = game["venue"].split(",")[0]  # Extract city from venue
+        forecast = await mcp_weather.get_weather(city=city)
+        print(f"{game['away_team']} @ {game['home_team']} - {forecast['conditions']}")
 ```
+
+## Available Servers
+
+### weather
+- **API**: [Open-Meteo](https://open-meteo.com/)
+- **Tools**: `get_weather(city)`, `get_forecast(city, days)`, `get_coordinates(city)`
+
+### sports
+- **API**: ESPN
+- **Sports**: NFL, NBA, WNBA, MLB, NHL, College Football, College Basketball, MLS, Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Champions League, F1
+- **Tools**: 
+  - `scoreboard(sport, date)` - Today's games with live scores
+  - `standings(sport, group)` - Current standings
+  - `team_schedule(sport, team)` - Team's schedule
+  - `news(sport, limit)` - Latest headlines
+  - `list_sports()` - All available sport codes
 
 ## Output Schemas
 
@@ -47,23 +65,13 @@ We use Pydantic models in `schemas.py` for:
 ```python
 from pydantic import BaseModel, Field
 
-class MatchInfo(BaseModel):
-    """Information about a soccer match."""
-    home: str = Field(description="Home team name")
-    away: str = Field(description="Away team name")
-    venue: str = Field(description="City where match is played")
-    score: str | None = Field(description="Current score like '2-1'")
-    status: str = Field(description="SCHEDULED, LIVE, HALFTIME, FINISHED")
-```
-
-### Using Schemas in Tools
-
-```python
-from schemas import MatchInfo
-
-async def get_live_matches():
-    # ... fetch data ...
-    return [MatchInfo(**match).model_dump() for match in matches]
+class GameInfo(BaseModel):
+    """Information about a sports game."""
+    home_team: str = Field(description="Home team name")
+    away_team: str = Field(description="Away team name")
+    score: str | None = Field(description="Score like '24-17'")
+    status: str = Field(description="SCHEDULED, LIVE, FINAL")
+    sport: str = Field(description="Sport name")
 ```
 
 ### Available Schemas
@@ -72,40 +80,39 @@ async def get_live_matches():
 |--------|---------|-------------|
 | `WeatherInfo` | weather.get_weather | Current weather conditions |
 | `ForecastInfo` | weather.get_forecast | Multi-day forecast |
-| `MatchInfo` | soccer.get_live_matches, get_upcoming | Match information |
-| `StandingsInfo` | soccer.get_standings | League table |
-| `TeamStanding` | (part of StandingsInfo) | Team position in league |
+| `GameInfo` | sports.scoreboard, team_schedule | Game/match information |
+| `StandingEntry` | sports.standings | Team position in standings |
+| `NewsArticle` | sports.news | News headline |
 
 ## Configuration
 
-Create `.mcp/my-servers.json`:
+Create `.mcp/mcp-servers.json`:
 
 ```json
 {
   "mcpServers": {
     "weather": {
       "command": "python",
-      "args": ["C:/path/to/servers/weather.py"],
+      "args": ["${workspaceFolder}/servers/weather.py"],
       "description": "Get weather for cities"
+    },
+    "sports": {
+      "command": "python",
+      "args": ["${workspaceFolder}/servers/sports.py"],
+      "description": "Get live scores, standings, schedules for NFL, NBA, MLB, NHL, Soccer, F1"
     }
   }
 }
 ```
 
-Or set environment variable:
-```
-MCP_SERVERS_CONFIG=C:/path/to/my-servers.json
-```
-
-After adding servers, regenerate the API documentation:
+After adding/modifying servers, regenerate the API documentation:
 ```bash
 uv run python generate_api_docs.py
 ```
-This updates `.mcp/docs/API.md` which the VS Code Copilot Agent uses.
 
-## API Keys
+## APIs Used
 
-| Server | API Key Required? | Notes |
-|--------|-------------------|-------|
-| weather | ❌ No | Uses [Open-Meteo](https://open-meteo.com/) - completely free, no registration |
-| soccer | ❌ No (mock) | Returns mock data; set `FOOTBALL_API_KEY` for real data from [football-data.org](https://www.football-data.org/) |
+| Server | API | Notes |
+|--------|-----|-------|
+| weather | [Open-Meteo](https://open-meteo.com/) | Free weather data |
+| sports | ESPN | Live scores, standings, schedules |

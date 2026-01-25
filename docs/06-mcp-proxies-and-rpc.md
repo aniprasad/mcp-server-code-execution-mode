@@ -392,7 +392,7 @@ Get loaded servers:
     "id": 3,
     "payload": {
         "success": True,
-        "servers": ["weather", "soccer"]
+        "servers": ["weather", "sports"]
     }
 }
 ```
@@ -522,9 +522,9 @@ The sandbox can only access servers that were requested in `run_python`:
 # This works:
 await mcp_weather.get_weather(city="NYC")
 
-# This fails (soccer wasn't requested):
-await mcp_soccer.get_matches()
-# Error: "Server 'soccer' is not available"
+# This fails (sports wasn't requested):
+await mcp_sports.scoreboard(sport='nba')
+# Error: "Server 'sports' is not available"
 ```
 
 ### Request Validation
@@ -556,7 +556,7 @@ Multiple RPC calls can be in flight simultaneously:
 results = await asyncio.gather(
     mcp_weather.get_weather(city="NYC"),
     mcp_weather.get_weather(city="LA"),
-    mcp_soccer.get_matches(),
+    mcp_sports.scoreboard(sport='nba'),
 )
 ```
 

@@ -30,7 +30,7 @@ Each server defines tools with:
 
 ### MCP Client
 
-A program that calls MCP servers. In our case, this bridge acts as a client to connect to weather, soccer, and other MCP servers.
+A program that calls MCP servers. In our case, this bridge acts as a client to connect to weather, sports, and other MCP servers.
 
 ### The Bridge
 
@@ -88,7 +88,7 @@ The process of finding out what MCP servers and tools are available, without loa
 ```python
 # "What servers exist?"
 runtime.discovered_servers()
-# → ['weather', 'soccer', 'filesystem']
+# → ['weather', 'sports', 'filesystem']
 
 # "What tools does 'weather' have?"
 await runtime.query_tool_docs('weather')
@@ -136,7 +136,7 @@ Here's how all the pieces fit together:
 │   │                            ▼               ▼               ▼        │  │
 │   │                     ┌──────────┐    ┌──────────┐    ┌──────────┐    │  │
 │   │                     │ MCP      │    │ MCP      │    │ MCP      │    │  │
-│   │                     │ weather  │    │ soccer   │    │ other    │    │  │
+│   │                     │ weather  │    │ sports   │    │ other    │    │  │
 │   │                     └──────────┘    └──────────┘    └──────────┘    │  │
 │   │                                                                      │  │
 │   │   ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─   │  │
@@ -153,7 +153,7 @@ Here's how all the pieces fit together:
 │   │   │    │              (~600 lines)                          │   │  │  │
 │   │   │    │                                                    │   │  │  │
 │   │   │    │  • Stream proxies (print → JSON)                   │   │  │  │
-│   │   │    │  • MCP proxies (mcp_weather, mcp_soccer)           │   │  │  │
+│   │   │    │  • MCP proxies (mcp_weather, mcp_sports)           │   │  │  │
 │   │   │    │  • RPC mechanism (_rpc_call)                       │   │  │  │
 │   │   │    │  • Runtime helpers (save_memory, etc)              │   │  │  │
 │   │   │    │  • Main loop (wait for code)                       │   │  │  │

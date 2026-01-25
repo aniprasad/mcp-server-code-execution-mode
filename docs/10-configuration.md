@@ -85,6 +85,8 @@ export MCP_BRIDGE_LOG_LEVEL=DEBUG
 The bridge includes Windows-specific handling:
 
 - **Event Loop**: Uses `WindowsProactorEventLoopPolicy` for proper async subprocess support
+- **Stdio Transport Fix**: Bypasses MCP SDK's memory queue for reliable message delivery (works around anyio/SDK issues on Windows)
+- **Cancel Scope Patch**: Suppresses benign `RuntimeError` from nested cancel scopes in multi-turn conversations
 - **Handle Cleanup**: Properly cleans up process handles to avoid `ResourceWarning`
 - **IPC Cleanup**: LRU-based cleanup keeps max 50 IPC directories to prevent accumulation
 
@@ -144,30 +146,27 @@ export MCP_SERVERS_CONFIG=/path/to/my-servers.json
 
 ### Example Configurations
 
-**Python server (no API key needed):**
+**Python server:**
 ```json
 {
   "mcpServers": {
     "weather": {
       "command": "python",
       "args": ["C:/Users/you/servers/weather.py"],
-      "description": "Get weather information (uses Open-Meteo, free!)"
+      "description": "Get weather information"
     }
   }
 }
 ```
 
-**Python server with API key:**
+**Python server example:**
 ```json
 {
   "mcpServers": {
-    "soccer": {
+    "sports": {
       "command": "python",
-      "args": ["C:/Users/you/servers/soccer.py"],
-      "env": {
-        "FOOTBALL_API_KEY": "your-api-key"
-      },
-      "description": "Get live soccer matches and standings"
+      "args": ["C:/Users/you/servers/sports.py"],
+      "description": "Get live scores, standings, and schedules"
     }
   }
 }
@@ -283,7 +282,7 @@ cat > .mcp/mcp-servers.json << 'EOF'
     "weather": {
       "command": "python",
       "args": ["/path/to/weather.py"],
-      "description": "Weather info (Open-Meteo, no key needed!)"
+      "description": "Weather information"
     }
   }
 }
@@ -396,15 +395,12 @@ Error: No container runtime found
     "weather": {
       "command": "python",
       "args": ["C:/Users/dev/servers/weather.py"],
-      "description": "Weather information (Open-Meteo, no key needed!)"
+      "description": "Weather information"
     },
-    "soccer": {
+    "sports": {
       "command": "python",
-      "args": ["C:/Users/dev/servers/soccer.py"],
-      "env": {
-        "FOOTBALL_API_KEY": "${FOOTBALL_API_KEY}"
-      },
-      "description": "Live soccer matches and standings"
+      "args": ["C:/Users/dev/servers/sports.py"],
+      "description": "Live sports scores and standings"
     },
     "calculator": {
       "command": "python",
@@ -432,8 +428,7 @@ export MCP_BRIDGE_MAX_TIMEOUT=180
 export MCP_BRIDGE_LOG_LEVEL=INFO
 
 # API keys for servers that need them
-# (Note: weather.py uses Open-Meteo which is free and needs no key!)
-export FOOTBALL_API_KEY=your-key-here
+export MY_API_KEY=your-key-here
 ```
 
 ---

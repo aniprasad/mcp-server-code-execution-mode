@@ -1,6 +1,6 @@
 ---
 name: Python Sandbox
-description: Execute Python code in a secure Podman container with access to MCP servers for weather, soccer, and more.
+description: Execute Python code in a secure Podman container with access to MCP servers for weather, sports, and more.
 model: GPT-5.2-Codex (copilot)
 tools:
     - "read/readFile"
@@ -32,7 +32,7 @@ Other docs (read when relevant):
 ## run_python Tool
 
 - `code` (required): Python code to execute
-- `servers` (optional): MCP servers to load, e.g., `['weather', 'soccer']`
+- `servers` (optional): MCP servers to load, e.g., `['weather', 'sports']`
 - `timeout` (optional): Seconds (default 120)
 
 ## Core Rules

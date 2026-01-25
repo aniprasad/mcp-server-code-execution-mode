@@ -80,7 +80,10 @@ def cleanup_stale_containers(verbose: bool = True) -> int:
             # List containers matching our naming pattern
             result = subprocess.run(
                 [runtime, "ps", "-a", "--format", "{{.Names}}", "--filter", "name=mcp-sandbox-"],
-                capture_output=True, text=True, timeout=10
+                capture_output=True,
+                text=True,
+                timeout=10,
+                stdin=subprocess.DEVNULL,
             )
             if result.returncode != 0:
                 continue
@@ -92,7 +95,9 @@ def cleanup_stale_containers(verbose: bool = True) -> int:
             # Force remove them
             subprocess.run(
                 [runtime, "rm", "-f"] + containers,
-                capture_output=True, timeout=15
+                capture_output=True,
+                timeout=15,
+                stdin=subprocess.DEVNULL,
             )
             removed = len(containers)
             
@@ -100,6 +105,10 @@ def cleanup_stale_containers(verbose: bool = True) -> int:
                 print(f"🧹 Cleaned up {removed} stale sandbox container(s)")
             break
             
+        except subprocess.TimeoutExpired:
+            if verbose:
+                print(f"⚠ {runtime} cleanup timed out")
+            continue
         except FileNotFoundError:
             continue  # Runtime not installed
         except Exception:

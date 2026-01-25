@@ -71,7 +71,7 @@ AI gets 1 tool: run_python (~200 tokens)
 │                                                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │
 │  │ MCP Server  │  │ MCP Server  │  │ MCP Server  │           │
-│  │  weather    │  │   soccer    │  │  filesystem │           │
+│  │  weather    │  │   sports    │  │  filesystem │           │
 │  └─────────────┘  └─────────────┘  └─────────────┘           │
 │                (These have network access)                    │
 └──────────────────────────────────────────────────────────────┘
@@ -94,7 +94,7 @@ Inside the sandbox, the AI can:
 ```python
 # Discover what's available
 servers = runtime.discovered_servers()
-# → ['weather', 'soccer', 'filesystem']
+# → ['weather', 'sports', 'filesystem']
 
 # Search for tools
 matches = await runtime.search_tool_docs("current temperature")
@@ -116,13 +116,13 @@ city = load_memory("last_city")
 **User:** "What's the weather like at today's Premier League matches?"
 
 **AI's thought process:**
-1. I need weather data and soccer data
+1. I need weather data and sports data
 2. Let me write Python to combine them
 
 **AI writes:**
 ```python
 # Get today's matches
-matches = await mcp_soccer.get_live_matches()
+matches = await mcp_sports.scoreboard(sport='epl')
 
 # Get weather for each venue
 for match in matches:

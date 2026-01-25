@@ -1738,7 +1738,7 @@ class RootlessContainerSandbox:
                     tool = self._tools.get(tool_alias)
                     target = tool.get("name") if tool else tool_alias
                     summary = (tool.get("description") if tool else "") or ""
-
+                    
                     async def _invoke(_target=target, **kwargs):
                         response = await _rpc_call(
                             {
@@ -2614,20 +2614,10 @@ class SandboxInvocation:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        # WINDOWS FIX: Stop all loaded server clients to prevent subprocess handle
-        # inheritance issues - VS Code may hang waiting for inherited handles to close.
-        # On Linux/macOS, we keep clients alive for better performance (persistent connections).
-        if sys.platform == "win32":
-            for server_name in self.active_servers:
-                client = self.bridge.clients.get(server_name)
-                if client:
-                    try:
-                        logger.debug("Stopping MCP client for server: %s (Windows handle cleanup)", server_name)
-                        await client.stop()
-                        self.bridge.clients.pop(server_name, None)
-                        self.bridge.loaded_servers.discard(server_name)
-                    except Exception:
-                        logger.debug("Failed to stop client %s", server_name, exc_info=True)
+        # WINDOWS FIX: Do NOT stop MCP clients here - the cleanup triggers anyio
+        # cancel scope errors that cause "Request cancelled - duplicate response suppressed".
+        # Let connections persist instead. On Linux/macOS, also keep alive for performance.
+        # The clients will be cleaned up when the server process exits.
         
         if self._temp_dir:
             self._temp_dir.cleanup()
@@ -3440,6 +3430,30 @@ async def _get_server_names() -> List[str]:
     return _server_names_cache
 
 
+# Monkey-patch MCP RequestResponder.__exit__ to suppress cancel scope context errors.
+# On Windows, nested stdio_client calls (for RPC to weather/sports MCP servers) can
+# cause the cancel scope to be entered and exited from different task contexts.
+# This is a benign error - the request was already completed successfully.
+try:
+    from mcp.shared.session import RequestResponder as _RequestResponder
+
+    _orig_request_responder_exit = _RequestResponder.__exit__
+
+    def _patched_request_responder_exit(self, exc_type, exc_val, exc_tb):
+        try:
+            return _orig_request_responder_exit(self, exc_type, exc_val, exc_tb)
+        except RuntimeError as e:
+            if "cancel scope" in str(e).lower():
+                # Suppress the cancel scope context error - the request was already handled
+                logger.debug("Suppressed benign cancel scope exit error: %s", e)
+                return False
+            raise
+
+    _RequestResponder.__exit__ = _patched_request_responder_exit
+except Exception:
+    pass
+
+
 # Monkey-patch MCP server _handle_message to ignore benign JSON parse exceptions
 try:
     from mcp.server.lowlevel.server import Server as LowLevelServer
@@ -3586,8 +3600,7 @@ async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
             exit_code=result.exit_code,
             stdout=result.stdout,
             stderr=result.stderr,
-            # Don't include servers in response - testing if this causes VS Code hang
-            # servers=server_list,
+            servers=server_list,
         )
         logger.info("call_tool returning response (success)")
         return response
@@ -3623,10 +3636,66 @@ async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
 
 async def main() -> None:
     logging.basicConfig(level=os.environ.get("MCP_BRIDGE_LOG_LEVEL", "INFO"))
+    
+    # WINDOWS FIX: Write directly to stdout, bypassing the SDK's memory queue.
+    # The SDK uses a MemoryObjectSendStream that gets drained by a background task,
+    # but on Windows that background task sometimes blocks/hangs. By writing directly
+    # to stdout.buffer, we bypass the problematic anyio TaskGroup machinery.
+    class DirectStdoutWriteStream:
+        """Write directly to stdout instead of using SDK's memory queue."""
+        def __init__(self, inner):
+            self._inner = inner
+            import io
+            # Use binary buffer for reliability, with UTF-8 encoding
+            self._stdout_buffer = sys.stdout.buffer
+            
+        async def send(self, message):
+            # Serialize the message
+            try:
+                if hasattr(message, 'message') and hasattr(message.message, 'model_dump_json'):
+                    json_str = message.message.model_dump_json(by_alias=True, exclude_none=True)
+                elif hasattr(message, 'model_dump_json'):
+                    json_str = message.model_dump_json(by_alias=True, exclude_none=True)
+                else:
+                    json_str = str(message)
+            except Exception as e:
+                logger.error("DIRECT_WRITE: Failed to serialize message: %s", e)
+                # Fall back to inner stream
+                return await self._inner.send(message)
+            
+            # Write directly to stdout binary buffer
+            try:
+                data = (json_str + "\n").encode("utf-8")
+                self._stdout_buffer.write(data)
+                self._stdout_buffer.flush()
+                logger.debug("DIRECT_WRITE: Wrote %d bytes directly to stdout", len(data))
+            except Exception as e:
+                logger.error("DIRECT_WRITE: Write failed: %s, falling back to SDK", e)
+                return await self._inner.send(message)
+        
+        async def aclose(self):
+            if hasattr(self._inner, 'aclose'):
+                return await self._inner.aclose()
+        
+        # Support async context manager protocol (used by SDK's _receive_loop)
+        async def __aenter__(self):
+            if hasattr(self._inner, '__aenter__'):
+                await self._inner.__aenter__()
+            return self
+        
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            if hasattr(self._inner, '__aexit__'):
+                return await self._inner.__aexit__(exc_type, exc_val, exc_tb)
+            return False
+        
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+    
     try:
         async with stdio_server() as (read_stream, write_stream):
+            direct_stream = DirectStdoutWriteStream(write_stream)
             await app.run(
-                read_stream, write_stream, app.create_initialization_options()
+                read_stream, direct_stream, app.create_initialization_options()
             )
     except Exception as e:
         logging.error("Fatal error in main loop: %s", e)

@@ -104,7 +104,7 @@ uv run python prepare.py
 
 This script:
 - Creates `.mcp/` directory structure
-- Copies example server configs (weather, soccer)
+- Copies example server configs (weather, sports)
 - Generates `.mcp/docs/API.md` API documentation
 
 #### 4. Test Installation

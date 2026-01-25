@@ -5,10 +5,10 @@
       "args": ["${workspaceFolder}/servers/weather.py"],
       "description": "Get weather information for cities (current conditions and forecasts)"
     },
-    "soccer": {
+    "sports": {
       "command": "python", 
-      "args": ["${workspaceFolder}/servers/soccer.py"],
-      "description": "Get live soccer matches, upcoming games, and league standings"
+      "args": ["${workspaceFolder}/servers/sports.py"],
+      "description": "Get live scores, standings, and schedules for NFL, NBA, MLB, NHL, Soccer, and F1"
     }
   }
 }

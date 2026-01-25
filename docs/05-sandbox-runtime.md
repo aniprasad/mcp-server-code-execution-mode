@@ -12,7 +12,7 @@ The entrypoint script is the "operating system" for the sandbox. It provides:
 | **Stdin Reader** | Receive commands and RPC responses from host |
 | **RPC Mechanism** | Send requests to host, wait for responses |
 | **MCP Modules** | Fake `mcp.runtime` and `mcp.servers` packages |
-| **MCP Proxies** | `mcp_weather`, `mcp_soccer`, etc. |
+| **MCP Proxies** | `mcp_weather`, `mcp_sports`, etc. |
 | **Memory Helpers** | `save_memory()`, `load_memory()`, `save_tool()` |
 | **Artifact Helpers** | `save_image()`, `save_file()`, `execution_folder()` |
 | **Main Loop** | Wait for code, execute, repeat |
@@ -52,7 +52,7 @@ AVAILABLE_SERVERS = [
 
 DISCOVERED_SERVERS = {
     "weather": "Get weather information for cities",
-    "soccer": "Get live soccer matches and standings"
+    "sports": "Get live scores, standings, and schedules for various sports"
 }
 
 # Paths for persistence
@@ -288,7 +288,7 @@ def discovered_servers(detailed=False):
     if detailed:
         return tuple({"name": k, "description": v} for k, v in DISCOVERED_SERVERS.items())
     return tuple(DISCOVERED_SERVERS.keys())
-    # → ('weather', 'soccer')
+    # → ('weather', 'sports')
 
 async def list_tools(server):
     """Get tools for a specific server (via RPC)."""
@@ -542,7 +542,7 @@ _GLOBAL_NAMESPACE["execution_folder"] = execution_folder
 
 Now when LLM code executes, it can access:
 - `mcp_weather` - Proxy for weather server
-- `mcp_soccer` - Proxy for soccer server
+- `mcp_sports` - Proxy for sports server
 - `save_memory()` - Direct access to helper
 - `save_image()` - Save images to execution folder
 - `save_file()` - Save files to execution folder

@@ -59,52 +59,49 @@ class ForecastInfo(BaseModel):
 
 
 # =============================================================================
-# Soccer/Football Schemas
+# Sports Schemas (ESPN-based multi-sport)
 # =============================================================================
 
-class MatchInfo(BaseModel):
-    """Information about a soccer/football match."""
+class GameInfo(BaseModel):
+    """Information about a sports game/match."""
     
-    home: str = Field(description="Home team name")
-    away: str = Field(description="Away team name")
-    score: Optional[str] = Field(None, description="Current or final score like '2-1' (None if not started)")
-    status: str = Field(description="Match status: SCHEDULED, LIVE, HALFTIME, FINISHED, POSTPONED")
-    minute: Optional[int] = Field(None, description="Current minute of play (only for live matches)")
-    competition: str = Field(description="League or tournament name")
-    venue: str = Field(description="City where the match is played")
-    datetime: Optional[str] = Field(None, description="Match date/time in ISO format (for scheduled matches)")
+    home_team: str = Field(description="Home team name")
+    away_team: str = Field(description="Away team name")
+    home_score: int = Field(description="Home team score")
+    away_score: int = Field(description="Away team score")
+    score: Optional[str] = Field(None, description="Score string like '24-17' (None if not started)")
+    status: str = Field(description="Game status: SCHEDULED, LIVE, FINAL")
+    detail: str = Field(description="Status detail (e.g., '4th Quarter', 'Final', '3:30 PM ET')")
+    start_time: str = Field(description="Game start time in ISO format")
+    venue: str = Field(description="Venue/stadium name")
+    broadcast: Optional[str] = Field(None, description="TV broadcast info")
+    sport: str = Field(description="Sport name (e.g., 'NBA', 'NFL')")
+    clock: Optional[str] = Field(None, description="Game clock (for live games)")
+    period: Optional[int] = Field(None, description="Current period/quarter (for live games)")
 
 
-class TeamStanding(BaseModel):
-    """A team's position in league standings."""
+class StandingEntry(BaseModel):
+    """A team's position in standings."""
     
-    position: int = Field(description="League position (1 = first place)")
+    rank: int = Field(description="Position in standings")
     team: str = Field(description="Team name")
-    played: int = Field(description="Games played")
-    won: int = Field(description="Games won")
-    drawn: int = Field(description="Games drawn")
-    lost: int = Field(description="Games lost")
-    goals_for: int = Field(description="Goals scored")
-    goals_against: int = Field(description="Goals conceded")
-    goal_difference: int = Field(description="Goal difference (for - against)")
-    points: int = Field(description="Total points")
+    wins: int = Field(description="Wins")
+    losses: int = Field(description="Losses")
+    ties: Optional[int] = Field(None, description="Ties (for sports that have them)")
+    pct: float = Field(description="Win percentage")
+    points: Optional[int] = Field(None, description="Points (for leagues using points)")
+    games_back: Optional[str] = Field(None, description="Games behind leader")
+    streak: Optional[str] = Field(None, description="Current streak (e.g., 'W3')")
+    division: Optional[str] = Field(None, description="Division/conference name")
 
 
-class StandingsInfo(BaseModel):
-    """League standings/table for a competition."""
+class NewsArticle(BaseModel):
+    """Sports news article."""
     
-    competition: str = Field(description="Competition name")
-    competition_code: str = Field(description="Competition code (e.g., 'PL', 'CL')")
-    season: str = Field(description="Current season (e.g., '2025-2026')")
-    standings: List[TeamStanding] = Field(description="List of team standings ordered by position")
-
-
-class CompetitionInfo(BaseModel):
-    """Information about a soccer competition."""
-    
-    code: str = Field(description="Competition code (e.g., 'PL', 'CL')")
-    name: str = Field(description="Full competition name")
-    country: Optional[str] = Field(None, description="Country (for domestic leagues)")
+    headline: str = Field(description="Article headline")
+    description: str = Field(description="Short description")
+    published: str = Field(description="Publication date/time")
+    link: str = Field(description="URL to full article")
 
 
 # =============================================================================
@@ -153,10 +150,9 @@ def get_all_schemas() -> dict:
         WeatherInfo,
         ForecastInfo,
         ForecastDay,
-        MatchInfo,
-        TeamStanding,
-        StandingsInfo,
-        CompetitionInfo,
+        GameInfo,
+        StandingEntry,
+        NewsArticle,
     ]
     return {
         model.__name__: {

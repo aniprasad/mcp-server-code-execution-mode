@@ -349,7 +349,7 @@ def _make_api_request(url: str, headers: dict = None) -> dict:
 
 
 async def get_weather(city: str) -> Dict[str, Any]:
-    """Get weather from Open-Meteo API (free, no API key needed!)."""
+    """Get weather from Open-Meteo API."""
     # First, geocode the city name to coordinates
     encoded_city = urllib.parse.quote(city)
     geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={encoded_city}&count=1"
@@ -376,8 +376,6 @@ async def get_weather(city: str) -> Dict[str, Any]:
         "humidity": data["current"]["relative_humidity_2m"]
     }
 ```
-
-> 💡 **Tip:** The included `servers/weather.py` uses [Open-Meteo](https://open-meteo.com/) which is completely free with no API key required!
 
 ---
 
@@ -448,8 +446,7 @@ async def test_hello():
     assert result["message"] == "Hello, World!"
 
 @pytest.mark.asyncio
-async def test_get_weather_mock():
-    # Test with mock data (no API key)
+async def test_get_weather():
     result = await get_weather(city="Seattle")
     assert "city" in result
     assert "temp" in result

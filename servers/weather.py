@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Free Weather MCP Server (No API Key Required!)
+Weather MCP Server
 
-Uses Open-Meteo API - completely free, no registration needed.
+Uses Open-Meteo API for weather data.
 https://open-meteo.com/
 
 Usage in sandbox:
-    weather = await mcp_weather_free.get_weather(city="Seattle")
-    forecast = await mcp_weather_free.get_forecast(city="London", days=3)
+    weather = await mcp_weather.get_weather(city="Seattle")
+    forecast = await mcp_weather.get_forecast(city="London", days=3)
 """
 
 import asyncio

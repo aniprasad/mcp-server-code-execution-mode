@@ -4,9 +4,9 @@ This document explains how the bridge finds and loads MCP servers from various c
 
 ## 🎯 The Goal
 
-When you call `run_python(code="...", servers=["weather", "soccer"])`, the bridge needs to:
+When you call `run_python(code="...", servers=["weather", "sports"])`, the bridge needs to:
 
-1. Find the configuration for "weather" and "soccer"
+1. Find the configuration for "weather" and "sports"
 2. Know how to start those servers
 3. Connect to them
 
@@ -89,7 +89,7 @@ For directories like `.mcp/`, the bridge reads all `.json` files:
 ```
 .mcp/
 ├── weather.json       # Contains weather server config
-├── soccer.json        # Contains soccer server config
+├── sports.json        # Contains sports server config
 └── mcp-servers.json   # Can contain multiple servers
 ```
 
@@ -133,7 +133,7 @@ For directories like `.mcp/`, the bridge reads all `.json` files:
            args=["C:/path/to/weather.py"],
            description="Get weather information"
        ),
-       "soccer": MCPServerInfo(...),
+       "sports": MCPServerInfo(...),
        ...
    }
 ```
@@ -231,8 +231,8 @@ await bridge.execute_code("...", servers=["weather"], timeout=30)
 # → weather is already loaded, skipped
 
 # Third call requesting both
-await bridge.execute_code("...", servers=["weather", "soccer"], timeout=30)
-# → weather already loaded, soccer is loaded now
+await bridge.execute_code("...", servers=["weather", "sports"], timeout=30)
+# → weather already loaded, sports is loaded now
 ```
 
 This improves startup time and resource usage.
@@ -339,21 +339,18 @@ Create `.mcp/mcp-servers.json`:
     "weather": {
       "command": "python",
       "args": ["C:/Users/you/servers/weather.py"],
-      "description": "Get weather information for cities (uses Open-Meteo, no API key needed!)"
+      "description": "Get weather information for cities"
     },
-    "soccer": {
+    "sports": {
       "command": "python",
-      "args": ["C:/Users/you/servers/soccer.py"],
-      "env": {
-        "FOOTBALL_API_KEY": "your-key-here"
-      },
-      "description": "Get live soccer matches and standings"
+      "args": ["C:/Users/you/servers/sports.py"],
+      "description": "Get live scores, standings, and schedules for various sports"
     }
   }
 }
 ```
 
-> 💡 **Note:** The weather server uses [Open-Meteo](https://open-meteo.com/) which is free and requires no API key. The soccer server returns mock data without an API key.
+> 💡 **Note:** Both the weather and sports servers use free APIs.
 
 ### Step 3: Verify Discovery
 
@@ -364,7 +361,7 @@ servers = runtime.discovered_servers(detailed=True)
 print(servers)
 # → (
 #     {'name': 'weather', 'description': 'Get weather...'},
-#     {'name': 'soccer', 'description': 'Get live soccer...'}
+#     {'name': 'sports', 'description': 'Get live scores...'}
 # )
 ```
 
@@ -418,13 +415,9 @@ Each server can have its own environment variables (useful for API keys):
 ```json
 {
   "mcpServers": {
-    "soccer": {
+    "sports": {
       "command": "python",
-      "args": ["soccer.py"],
-      "env": {
-        "FOOTBALL_API_KEY": "your-key-here",
-        "LOG_LEVEL": "DEBUG"
-      }
+      "args": ["sports.py"]
     }
   }
 }
@@ -432,7 +425,7 @@ Each server can have its own environment variables (useful for API keys):
 
 These variables are passed to the server process, not to the sandbox.
 
-> 💡 **Note:** The included `weather.py` uses Open-Meteo (no API key needed). The `soccer.py` server works without an API key (mock data).
+> 💡 **Note:** Both weather.py and sports.py use free APIs.
 
 ---
 
