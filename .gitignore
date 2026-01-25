@@ -9,9 +9,13 @@ wheels/
 # Virtual environments
 .venv
 
+# VS Code personal settings
+.vscode/launch.json
+.vscode/c_cpp_properties.json
+.vscode/settings.json
+
 .claude/
 archive/
-settings.json
 .python-version
 .serena/
 .DS_Store

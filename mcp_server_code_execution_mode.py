@@ -598,18 +598,38 @@ def _build_tool_response(
     if mode == "compact":
         message = _render_compact_output(payload)
         structured = _build_compact_structured_payload(payload)
-        return CallToolResult(
+        result = CallToolResult(
             content=[TextContent(type="text", text=message)],
             structuredContent=structured,
             isError=is_error,
         )
+        logger.info(
+            "Sending response: status=%s, summary=%s, isError=%s, stdout_len=%d, stderr_len=%d",
+            payload.get("status"),
+            payload.get("summary"),
+            is_error,
+            len(stdout or ""),
+            len(stderr or ""),
+        )
+        logger.debug("Full response payload: %s", payload)
+        return result
 
     message = _render_toon_block(payload)
-    return CallToolResult(
+    result = CallToolResult(
         content=[TextContent(type="text", text=message)],
         structuredContent=payload,
         isError=is_error,
     )
+    logger.info(
+        "Sending response: status=%s, summary=%s, isError=%s, stdout_len=%d, stderr_len=%d",
+        payload.get("status"),
+        payload.get("summary"),
+        is_error,
+        len(stdout or ""),
+        len(stderr or ""),
+    )
+    logger.debug("Full response payload: %s", payload)
+    return result
 
 
 def _sanitize_identifier(value: str, *, default: str) -> str:
@@ -714,7 +734,13 @@ class PersistentMCPClient:
         if not self._session:
             raise SandboxError("MCP client not started")
 
+        import time
+        start_time = time.time()
+        logger.info("PersistentMCPClient.call_tool: calling %s on server %s with args %s", 
+                    name, self.server_info.name, arguments)
         call_result = await self._session.call_tool(name=name, arguments=arguments)
+        elapsed = time.time() - start_time
+        logger.info("PersistentMCPClient.call_tool: %s completed in %.2fs", name, elapsed)
         return call_result.model_dump(by_alias=True, exclude_none=True)
 
     async def stop(self) -> None:
@@ -893,14 +919,22 @@ class RootlessContainerSandbox:
             # The original try/finally block for transport is removed as per instruction.
 
             async def _rpc_call(payload):
+                import time as _rpc_time
+                start = _rpc_time.time()
                 loop = asyncio.get_running_loop()
                 global _REQUEST_COUNTER
                 _REQUEST_COUNTER += 1
                 request_id = _REQUEST_COUNTER
                 future = loop.create_future()
                 _PENDING_RESPONSES[request_id] = future
+                req_type = payload.get("type", "unknown")
+                tool_name = payload.get("tool", "")
                 _send_message({"type": "rpc_request", "id": request_id, "payload": payload})
-                return await future
+                print(f"[sandbox] RPC call #{request_id}: type={req_type}, tool={tool_name}", file=sys.stderr)
+                result = await future
+                elapsed = _rpc_time.time() - start
+                print(f"[sandbox] RPC call #{request_id} completed in {elapsed:.2f}s", file=sys.stderr)
+                return result
 
             def _install_mcp_modules():
                 mcp_pkg = types.ModuleType("mcp")
@@ -1439,6 +1473,8 @@ class RootlessContainerSandbox:
 
             _GLOBAL_NAMESPACE = {"__name__": "__sandbox__"}
             _GLOBAL_NAMESPACE.setdefault("mcp", __import__("mcp"))
+            # Make runtime available as a global so users don't need to import it
+            _GLOBAL_NAMESPACE["runtime"] = runtime_module
             LOADED_MCP_SERVERS = tuple(server["name"] for server in AVAILABLE_SERVERS)
             mcp_servers = {}
             for server in AVAILABLE_SERVERS:
@@ -1480,17 +1516,42 @@ class RootlessContainerSandbox:
         )
 
     async def _run_runtime_command(self, *args: str) -> tuple[int, str, str]:
-        process = await asyncio.create_subprocess_exec(
-            self.runtime,
-            *args,
-            stdout=aio_subprocess.PIPE,
-            stderr=aio_subprocess.PIPE,
-        )
-        stdout_bytes, stderr_bytes = await process.communicate()
+        """Run a runtime command (podman/docker) and return (returncode, stdout, stderr).
+        
+        WINDOWS FIX: Uses subprocess.run in an executor instead of asyncio.create_subprocess_exec.
+        The MCP server communicates via stdin/stdout with clients. When using asyncio subprocess,
+        child processes inherit the stdin pipe, causing communicate() to hang indefinitely
+        waiting for input that will never come. Using subprocess.run with stdin=DEVNULL
+        prevents this inheritance issue.
+        """
+        import subprocess
+        loop = asyncio.get_event_loop()
+        
+        def run_sync():
+            result = subprocess.run(
+                [self.runtime, *args],
+                capture_output=True,
+                # CRITICAL: Don't inherit stdin from MCP server - prevents hang on Windows
+                stdin=subprocess.DEVNULL,
+                timeout=30,
+            )
+            return result.returncode, result.stdout, result.stderr
+        
+        try:
+            returncode, stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                loop.run_in_executor(None, run_sync),
+                timeout=35.0
+            )
+        except (asyncio.TimeoutError, subprocess.TimeoutExpired) as e:
+            logger.error("_run_runtime_command: TIMEOUT for %s", args)
+            return -1, "", f"Timeout waiting for command: {e}"
+        except Exception as e:
+            logger.error("_run_runtime_command: error for %s: %s", args, e)
+            return -1, "", str(e)
+            
         stdout_text = stdout_bytes.decode(errors="replace")
         stderr_text = stderr_bytes.decode(errors="replace")
-        assert process.returncode is not None
-        return process.returncode, stdout_text, stderr_text
+        return returncode, stdout_text, stderr_text
 
     async def _stop_runtime(self) -> None:
         if not self.runtime:
@@ -1709,6 +1770,7 @@ class RootlessContainerSandbox:
                 elif msg_type == "execution_done":
                     break
                 elif msg_type == "rpc_request":
+                    logger.info("Bridge received RPC request: id=%s", message.get("id"))
                     if process.stdin is None:
                         continue
                     if rpc_handler is None:
@@ -1719,9 +1781,11 @@ class RootlessContainerSandbox:
                     else:
                         try:
                             payload = message.get("payload", {})
+                            logger.info("Bridge calling RPC handler with payload: %s", payload)
                             response = await rpc_handler(
                                 payload if isinstance(payload, dict) else {}
                             )
+                            logger.info("Bridge RPC handler returned: success=%s", response.get("success"))
                         except Exception as exc:
                             logger.debug("RPC handler failed", exc_info=True)
                             response = {"success": False, "error": str(exc)}
@@ -1843,7 +1907,11 @@ class RootlessContainerSandbox:
 
             shared = True
             runtime_name = os.path.basename(self.runtime) if self.runtime else ""
-            if "podman" in runtime_name:
+            # WINDOWS FIX: Skip volume sharing setup on Windows.
+            # Podman Desktop with WSL2 automatically mounts Windows drives at /mnt/c/, /mnt/d/, etc.
+            # The 'podman machine set --volume' command doesn't exist in Podman 5 and would hang.
+            # On macOS/Linux, explicit volume sharing may still be needed.
+            if "podman" in runtime_name and sys.platform != "win32":
                 shared = await self._ensure_podman_volume_shared(resolved)
 
             if shared:
@@ -2009,8 +2077,13 @@ class SandboxInvocation:
         if ensure_share:
             await ensure_share(base_dir)
 
+        # WINDOWS FIX: Use ignore_cleanup_errors=True on Windows because the container
+        # may still have handles open on the temp directory when we try to clean up.
+        # The OS will clean up the directory eventually.
         self._temp_dir = tempfile.TemporaryDirectory(
-            prefix="mcp-bridge-ipc-", dir=str(base_dir)
+            prefix="mcp-bridge-ipc-", 
+            dir=str(base_dir),
+            ignore_cleanup_errors=(sys.platform == "win32"),
         )
         host_dir = Path(self._temp_dir.name)
         os.chmod(host_dir, 0o755)
@@ -2030,11 +2103,27 @@ class SandboxInvocation:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        # WINDOWS FIX: Stop all loaded server clients to prevent subprocess handle
+        # inheritance issues - VS Code may hang waiting for inherited handles to close.
+        # On Linux/macOS, we keep clients alive for better performance (persistent connections).
+        if sys.platform == "win32":
+            for server_name in self.active_servers:
+                client = self.bridge.clients.get(server_name)
+                if client:
+                    try:
+                        logger.debug("Stopping MCP client for server: %s (Windows handle cleanup)", server_name)
+                        await client.stop()
+                        self.bridge.clients.pop(server_name, None)
+                        self.bridge.loaded_servers.discard(server_name)
+                    except Exception:
+                        logger.debug("Failed to stop client %s", server_name, exc_info=True)
+        
         if self._temp_dir:
             self._temp_dir.cleanup()
 
     async def handle_rpc(self, request: Dict[str, object]) -> Dict[str, object]:
         req_type = request.get("type")
+        logger.info("handle_rpc: received request type=%s, server=%s", req_type, request.get("server"))
         if req_type == "list_servers":
             return {
                 "success": True,
@@ -2121,7 +2210,9 @@ class SandboxInvocation:
 
             arguments = cast(Dict[str, object], arguments)
             client_obj = cast(ClientLike, client)
+            logger.info("handle_rpc: calling tool %s with args %s", tool_name, arguments)
             result = await client_obj.call_tool(tool_name, arguments)
+            logger.info("handle_rpc: tool result received: %s", str(result)[:200])
             return {"success": True, "result": result}
         except Exception as exc:  # pragma: no cover
             logger.debug("MCP proxy call failed", exc_info=True)
@@ -2574,14 +2665,30 @@ class MCPBridge:
         servers: Optional[Sequence[str]] = None,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> SandboxResult:
+        # Pretty-print the code being executed with a visual box
+        separator = "=" * 60
+        logger.info(
+            "\n%s\n"
+            "EXECUTING CODE:\n"
+            "%s\n"
+            "%s\n"
+            "%s",
+            separator, separator, code, separator
+        )
+        
+        logger.info("execute_code: starting discovery")
         await self.discover_servers()
+        logger.info("execute_code: discovery complete")
         request_timeout = max(1, min(MAX_TIMEOUT, timeout))
         requested_servers = list(dict.fromkeys(servers or []))
 
         for server_name in requested_servers:
+            logger.info("execute_code: loading server %s", server_name)
             await self.load_server(server_name)
 
+        logger.info("execute_code: entering SandboxInvocation")
         async with SandboxInvocation(self, requested_servers) as invocation:
+            logger.info("execute_code: SandboxInvocation ready, calling execute")
             sandbox_obj = cast(SandboxLike, self.sandbox)
             result = await sandbox_obj.execute(
                 code,
@@ -2593,6 +2700,7 @@ class MCPBridge:
                 host_dir=invocation.host_dir,
                 rpc_handler=invocation.handle_rpc,
             )
+            logger.info("execute_code: sandbox.execute complete")
 
         if not result.success:
             raise SandboxError(
@@ -2605,6 +2713,79 @@ class MCPBridge:
 
 bridge = MCPBridge()
 app = Server(BRIDGE_NAME)
+
+# Cache for discovered server names (populated on first list_tools call)
+_server_names_cache: List[str] = []
+_server_names_populated = False
+
+# MCP base directory for cleanup
+_MCP_BASE_DIR = Path.home() / "MCPs"
+
+
+def _cleanup_stale_ipc_dirs(max_dirs: int = 50) -> None:
+    """Remove old IPC directories using LRU policy.
+    
+    Keeps the most recent `max_dirs` directories, removes the oldest ones.
+    This bounds disk usage while preserving recent dirs for debugging.
+    """
+    try:
+        if not _MCP_BASE_DIR.exists():
+            return
+        
+        # Find all IPC directories with their modification times
+        ipc_dirs: List[Tuple[Path, float]] = []
+        for item in _MCP_BASE_DIR.iterdir():
+            if item.is_dir() and item.name.startswith("mcp-bridge-ipc-"):
+                try:
+                    mtime = item.stat().st_mtime
+                    ipc_dirs.append((item, mtime))
+                except Exception:
+                    pass
+        
+        # If under limit, nothing to do
+        if len(ipc_dirs) <= max_dirs:
+            return
+        
+        # Sort by mtime (oldest first) and remove excess
+        ipc_dirs.sort(key=lambda x: x[1])
+        to_remove = len(ipc_dirs) - max_dirs
+        count = 0
+        
+        for item, _ in ipc_dirs[:to_remove]:
+            try:
+                shutil.rmtree(item, ignore_errors=True)
+                count += 1
+            except Exception:
+                pass  # Best effort cleanup
+        
+        if count > 0:
+            logger.info("LRU cleanup: removed %d old IPC directories (keeping %d)", count, max_dirs)
+    except Exception as e:
+        logger.debug("IPC cleanup error (non-fatal): %s", e)
+
+
+async def _get_server_names() -> List[str]:
+    """Get list of available MCP server names (fast discovery, no tool listing)."""
+    global _server_names_cache, _server_names_populated
+    
+    if _server_names_populated:
+        return _server_names_cache
+    
+    # Clean up stale IPC directories on startup
+    _cleanup_stale_ipc_dirs()
+    
+    try:
+        # Just discover server names, don't connect or list tools
+        discovered = await bridge.discover_servers()
+        _server_names_cache = list(discovered.keys())
+        _server_names_populated = True
+        logger.info("Discovered %d MCP servers: %s", len(_server_names_cache), _server_names_cache)
+    except Exception as e:
+        logger.warning("Failed to discover servers: %s", e)
+        _server_names_cache = []
+        _server_names_populated = True
+    
+    return _server_names_cache
 
 
 # Monkey-patch MCP server _handle_message to ignore benign JSON parse exceptions
@@ -2643,31 +2824,27 @@ except Exception:
 
 @app.list_tools()
 async def list_tools() -> List[Tool]:
+    # Get available server names (fast, no connection required)
+    server_names = await _get_server_names()
+    
     return [
         Tool(
             name="run_python",
             description=(
-                "The Code Execution MCP engine. Executes Python code in a stateful, persistent rootless sandbox environment "
-                "similar to a Jupyter notebook. Variables, functions, and imports are preserved across calls. "
-                "Use this tool for general code execution, data analysis, or when the user asks to 'run code'. "
-                "Supports loading additional MCP servers via the 'servers' array."
+                "Execute Python code in a persistent sandbox. "
+                "To call MCP server tools, pass servers=['name'] and use: result = await mcp_<name>.<tool>(...); print(result)"
             ),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "code": {
                         "type": "string",
-                        "description": (
-                            "Python source code to execute. Call runtime.capability_summary() inside the sandbox for this digest. "
-                            f"{SANDBOX_HELPERS_SUMMARY}"
-                        ),
+                        "description": "Python code to execute. For MCP tools, use: result = await mcp_<server>.<tool>(...); print(result)",
                     },
                     "servers": {
                         "type": "array",
-                        "items": {"type": "string"},
-                        "description": (
-                            "Optional list of MCP servers to make available as mcp_<name> proxies"
-                        ),
+                        "items": {"type": "string", "enum": server_names} if server_names else {"type": "string"},
+                        "description": f"MCP servers to load. Available: {', '.join(server_names) if server_names else 'none'}. REQUIRED when calling MCP tools.",
                     },
                     "timeout": {
                         "type": "integer",
@@ -2703,6 +2880,11 @@ async def read_resource(uri: str) -> str:
 
 @app.call_tool()
 async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
+    logger.info("call_tool invoked: name=%s, code_len=%d, servers=%s, timeout=%s",
+                name,
+                len(str(arguments.get("code", ""))),
+                arguments.get("servers", []),
+                arguments.get("timeout", DEFAULT_TIMEOUT))
     if name != "run_python":
         return _build_tool_response(
             status="error",
@@ -2741,14 +2923,17 @@ async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
         summary = "Success"
         if not result.stdout and not result.stderr:
             summary = "Success (no output)"
-        return _build_tool_response(
+        response = _build_tool_response(
             status="success",
             summary=summary,
             exit_code=result.exit_code,
             stdout=result.stdout,
             stderr=result.stderr,
-            servers=server_list,
+            # Don't include servers in response - testing if this causes VS Code hang
+            # servers=server_list,
         )
+        logger.info("call_tool returning response (success)")
+        return response
     except SandboxTimeout as exc:
         summary = f"Timeout: execution exceeded {timeout_value}s"
         return _build_tool_response(
@@ -2786,13 +2971,50 @@ async def main() -> None:
             await app.run(
                 read_stream, write_stream, app.create_initialization_options()
             )
-    except Exception:
-        logging.exception("Fatal error in main loop")
+    except Exception as e:
+        logging.error("Fatal error in main loop: %s", e)
+        logging.exception("Full traceback:")
         raise
 
 
 if __name__ == "__main__":
+    # WINDOWS FIX: Explicitly set ProactorEventLoop policy.
+    # Python 3.8+ uses ProactorEventLoop by default on Windows, but setting it explicitly
+    # ensures subprocess support works correctly when the MCP library may use different loops.
+    # ProactorEventLoop is required for asyncio subprocess support on Windows.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+    # Suppress noisy async generator cleanup errors from MCP client library.
+    # The stdio_client async generator sometimes closes from a different task context
+    # when the garbage collector runs, causing anyio cancel scope errors.
+    # These are benign - the cleanup still happens, it's just noisy.
+    def _custom_exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        message = context.get("message", "")
+        exception = context.get("exception")
+        
+        # Suppress specific known benign errors from MCP client cleanup
+        if "error occurred during closing of asynchronous generator" in message:
+            # Check if it's the stdio_client generator
+            asyncgen = context.get("asyncgen")
+            if asyncgen and "stdio_client" in str(asyncgen):
+                logger.debug("Suppressed benign stdio_client cleanup error: %s", message)
+                return
+        
+        # For cancel scope errors during cleanup, also suppress
+        if exception and "exit cancel scope in a different task" in str(exception):
+            logger.debug("Suppressed benign cancel scope cleanup error: %s", exception)
+            return
+        
+        # For all other exceptions, use the default handler
+        loop.default_exception_handler(context)
+
     try:
-        asyncio.run(main())
+        loop = asyncio.new_event_loop()
+        loop.set_exception_handler(_custom_exception_handler)
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
         sys.exit(0)
+    finally:
+        loop.close()
