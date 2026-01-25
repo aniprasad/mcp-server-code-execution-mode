@@ -97,6 +97,12 @@ Or set environment variable:
 MCP_SERVERS_CONFIG=C:/path/to/my-servers.json
 ```
 
+After adding servers, regenerate the API documentation:
+```bash
+uv run python generate_api_docs.py
+```
+This updates `~/MCPs/mcp-tools.md` which the VS Code Copilot Agent uses.
+
 ## API Keys
 
 | Server | API Key Required? | Notes |

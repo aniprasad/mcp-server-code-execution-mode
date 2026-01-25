@@ -6,9 +6,9 @@ Connects to all configured MCP servers, lists their tools, and generates
 human-readable API documentation for the agent.
 
 Usage:
-    python generate_manifest.py
+    python generate_api_docs.py
 
-The API docs are saved to ~/MCPs/API.md.
+The docs are saved to ~/MCPs/mcp-tools.md.
 """
 
 import argparse
@@ -154,7 +154,7 @@ async def generate_api_docs(output_path: Optional[Path] = None) -> Dict[str, Any
         Dict of server data.
     """
     if output_path is None:
-        output_path = Path.home() / "MCPs" / "API.md"
+        output_path = Path.home() / "MCPs" / "mcp-tools.md"
     
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
@@ -219,7 +219,7 @@ async def generate_api_docs(output_path: Optional[Path] = None) -> Dict[str, Any
                 "error": str(e),
             }
     
-    # Generate API.md (human-readable docs)
+    # Generate mcp-tools.md (human-readable docs)
     api_md = generate_api_markdown(servers_data)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(api_md)
@@ -258,7 +258,7 @@ def main():
         "--output", "-o",
         type=Path,
         default=None,
-        help="Output path for API.md (default: ~/MCPs/API.md)"
+        help="Output path for mcp-tools.md (default: ~/MCPs/mcp-tools.md)"
     )
     
     args = parser.parse_args()

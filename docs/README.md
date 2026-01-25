@@ -47,14 +47,27 @@ This dramatically reduces token usage while giving the LLM more flexibility thro
 mcp-server-code-execution-mode/
 ├── main.py                              # Entry point
 ├── mcp_server_code_execution_mode.py    # Core implementation (~2800 lines)
+├── prepare.py                           # Setup script (creates ~/MCPs/, generates docs)
+├── generate_api_docs.py                 # Generates ~/MCPs/mcp-tools.md
 ├── docs/                                # This documentation folder
 ├── servers/                             # Example MCP servers
 │   ├── _template.py                     # Template for new servers
 │   ├── weather.py                       # Weather API server
 │   ├── soccer.py                        # Soccer/football API server
 │   └── schemas.py                       # Pydantic output schemas
+├── .github/agents/                      # VS Code Copilot agent configuration
+│   └── python-sandbox.agent.md          # Agent instructions
 └── tests/                               # Test suite
 ```
+
+## 🤖 Agent Mode
+
+This project supports VS Code Copilot Agent mode via `.github/agents/python-sandbox.agent.md`. The agent:
+- Uses Claude Opus 4.5 model
+- Has access to `run_python` tool and VS Code file tools
+- Reads `~/MCPs/mcp-tools.md` for available MCP server APIs
+
+To use: Type `@python-sandbox` in VS Code Copilot Chat. Or choose it in the dropdown in Copilot Chat
 
 ## 🆘 Getting Help
 

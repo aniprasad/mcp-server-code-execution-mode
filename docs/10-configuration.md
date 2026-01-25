@@ -80,6 +80,14 @@ export MCP_BRIDGE_OUTPUT_MODE=toon
 export MCP_BRIDGE_LOG_LEVEL=DEBUG
 ```
 
+### Windows Support
+
+The bridge includes Windows-specific handling:
+
+- **Event Loop**: Uses `WindowsProactorEventLoopPolicy` for proper async subprocess support
+- **Handle Cleanup**: Properly cleans up process handles to avoid `ResourceWarning`
+- **IPC Cleanup**: LRU-based cleanup keeps max 50 IPC directories to prevent accumulation
+
 ### State Directory
 
 | Variable | Description | Default |

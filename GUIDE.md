@@ -16,46 +16,42 @@ A comprehensive guide to using the MCP Server Code Execution Mode bridge.
 
 ### Prerequisites
 
-#### 1. Container Runtime
+#### 1. Python 3.11+
 
-**Option A: Podman (Recommended)**
-
+Check your Python version:
 ```bash
-# macOS
-brew install podman
-
-# Ubuntu/Debian
-sudo apt-get install podman
-
-# Verify
-podman --version
+python --version   # or python3 --version
 ```
 
-**Option B: Rootless Docker**
+#### 2. Container Runtime
 
+| Platform | Podman (Recommended) | Docker |
+|----------|---------------------|--------|
+| **macOS** | `brew install podman` | `brew install --cask docker` |
+| **Ubuntu/Debian** | `sudo apt-get install -y podman` | `sudo apt-get install docker.io` |
+| **Windows** | [Podman Desktop](https://podman-desktop.io/) | [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
+
+Verify installation:
 ```bash
-# macOS
-brew install docker
-
-# Ubuntu/Debian
-sudo apt-get install docker.io
-
-# Add user to docker group
-sudo usermod -aG docker $USER
-newgrp docker
+podman --version   # or docker --version
 ```
 
-#### 2. Container Image
+#### 3. uv (Python Package Manager)
 
 ```bash
-# Pull image
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+#### 4. Container Image
+
+```bash
 podman pull python:3.13-slim
-
-# Or with Docker
+# or
 docker pull python:3.13-slim
-
-# Verify
-podman images python:3.13-slim
 ```
 
 Note on Pydantic compatibility:
@@ -78,17 +74,40 @@ And re-run `uv sync`.
 
 ### Setup
 
-#### 1. Install Dependencies
+#### 1. Clone the Repository
 
 ```bash
-# Using pip
-pip install -r requirements.txt
-
-# Or using uv (recommended)
-uv sync
+git clone https://github.com/user/mcp-server-code-execution-mode.git
+cd mcp-server-code-execution-mode
 ```
 
-#### 2. Test Installation
+#### 2. Install Dependencies
+
+```bash
+# Using uv (recommended) - creates .venv/ automatically
+uv sync
+
+# Or using pip with manual venv
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+```
+
+> **Note:** `uv sync` automatically creates a `.venv/` virtual environment and installs all dependencies from `pyproject.toml`. All `uv run` commands use this environment.
+
+#### 3. Run the Prepare Script
+
+```bash
+uv run python prepare.py
+```
+
+This script:
+- Creates `~/MCPs/` directory structure
+- Copies example server configs (weather, soccer)
+- Generates `~/MCPs/mcp-tools.md` API documentation
+
+#### 4. Test Installation
 
 ```bash
 uv run python mcp_server_code_execution_mode.py
@@ -97,7 +116,7 @@ uv run python mcp_server_code_execution_mode.py
 This starts the MCP server. If no errors occur, the installation is successful.
 
 
-#### 3. Register with MCP Client
+#### 5. Register with MCP Client
 
 **Claude Code & OpenCode:**
 
@@ -138,7 +157,7 @@ Add server to your client configuration:
 }
 ```
 
-#### 4. Restart MCP Client
+#### 6. Restart MCP Client
 
 Restart Claude Code or your MCP client to load the new server.
 
@@ -313,6 +332,41 @@ print('Server cwd:', cdir)
 **Note:** LLMs cannot set `cwd` via `run_python`'s `servers` parameter; it is part of your server configuration on the host. If you need a server to run in a particular workspace for a given task, either set `cwd` in the server's host-side configuration or start the server in a container that mounts the workspace path explicitly.
 
 **Tip for operators:** Add `cwd` to your server's configuration to avoid LLMs needing to guess a working directory.
+
+## VS Code Copilot Agent Mode
+
+This project includes a VS Code Copilot Agent configuration for seamless integration:
+
+### Setup
+
+1. **Agent Definition**: Located at `.github/agents/python-sandbox.agent.md`
+2. **Model**: Uses Claude Opus 4.5
+3. **Tools**: Has access to `run_python` and VS Code file tools (`readFile`, `fileSearch`, `listDirectory`, `textSearch`)
+
+### Usage
+
+Type `@python-sandbox` in VS Code Copilot Chat to invoke the agent, or select it from the dropdown.
+
+### API Documentation
+
+Run `generate_api_docs.py` to generate `~/MCPs/mcp-tools.md` which documents all available MCP server tools:
+
+```bash
+uv run python generate_api_docs.py
+```
+
+The agent reads this file (via `readFile` tool) to understand available APIs without making discovery calls at runtime.
+
+### VS Code Settings
+
+For Agent mode to work properly, ensure these settings in `.vscode/settings.json`:
+
+```json
+{
+  "chat.mcp.serverSampling": true,
+  "github.copilot.chat.omitBaseAgentInstructions": true
+}
+```
 
 ## Usage Patterns
 
@@ -752,6 +806,18 @@ export MCP_BRIDGE_PIDS=256
 2. Use local image: `podman pull python:3.13-slim`
 3. Consider caching strategies
 4. Reuse containers (not currently supported)
+
+### When to Restart or Regenerate
+
+| Change Made | Action Required |
+|-------------|-----------------|
+| Added/modified MCP server config in `~/MCPs/` | Restart the bridge |
+| Changed environment variables | Restart the bridge |
+| Updated `mcp_server_code_execution_mode.py` | Restart the bridge |
+| Added new MCP server for VS Code Agent | Run `uv run python generate_api_docs.py` then restart |
+| Modified server's tool definitions | Run `uv run python generate_api_docs.py` then restart |
+
+> **Tip:** The bridge discovers servers at startup. Always restart after config changes.
 
 ## Best Practices
 

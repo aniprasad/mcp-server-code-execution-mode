@@ -42,6 +42,16 @@ The pivot to rootless containers provided:
 - **2025-11 update**: Switched the default response renderer to compact
     plain text while keeping TOON blocks opt-in via `MCP_BRIDGE_OUTPUT_MODE`
     for scenarios that benefit from the structured format.
+- **2026-01 Windows fixes**: Added comprehensive Windows support including
+    `WindowsProactorEventLoopPolicy` for async subprocess handling, proper
+    handle cleanup to prevent `ResourceWarning`, and volume sharing probes
+    for Podman machine compatibility.
+- **2026-01 Agent mode**: Added VS Code Copilot Agent configuration
+    (`.github/agents/python-sandbox.agent.md`) with Claude Opus 4.5 model,
+    static API documentation generator (`generate_api_docs.py` →
+    `~/MCPs/mcp-tools.md`), and VS Code file tools integration.
+- **2026-01 IPC cleanup**: Implemented LRU-based cleanup for IPC directories,
+    keeping max 50 to prevent accumulation on long-running systems.
 
 ## Key Lessons
 

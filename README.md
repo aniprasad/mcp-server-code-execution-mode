@@ -250,21 +250,85 @@ Memory files are stored in `/projects/memory/` inside the container, which maps 
 
 ## Quick Start
 
-### 1. Prerequisites (macOS or Linux)
+### 1. Prerequisites
 
-- Check version: `python3 --version` (Python 3.11+ required)
-- If needed, install Python via package manager or [python.org](https://python.org)
-- macOS: `brew install podman` or `brew install --cask docker`
-- Ubuntu/Debian: `sudo apt-get install -y podman` or `curl -fsSL https://get.docker.com | sh`
+**Python 3.11+** is required. Check with `python3 --version` or `python --version`.
+
+**Container Runtime:**
+
+| Platform | Podman (Recommended) | Docker |
+|----------|---------------------|--------|
+| **macOS** | `brew install podman` | `brew install --cask docker` |
+| **Ubuntu/Debian** | `sudo apt-get install -y podman` | `curl -fsSL https://get.docker.com \| sh` |
+| **Windows** | [Podman Desktop](https://podman-desktop.io/) or `winget install RedHat.Podman` | [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
+
+**uv (Python package manager):**
 
 ```bash
+# macOS/Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
+
+**Pull the container image:**
 
 ```bash
 podman pull python:3.13-slim
 # or
 docker pull python:3.13-slim
+```
+
+### 2. Clone and Install
+
+```bash
+git clone https://github.com/user/mcp-server-code-execution-mode.git
+cd mcp-server-code-execution-mode
+
+# Create virtual environment and install dependencies
+uv sync
+
+# Set up ~/MCPs directory and generate API docs
+uv run python prepare.py
+```
+
+> **Note:** `uv sync` automatically creates a `.venv/` virtual environment. The `prepare.py` script creates `~/MCPs/`, copies example configs, and generates API documentation.
+
+### 3. Configure MCP Servers (Optional)
+
+The `prepare.py` script already creates `~/MCPs/` and copies example configs. To add more servers, edit `~/MCPs/mcp-servers.json`:
+
+```json
+{
+  "mcpServers": {
+    "weather": {
+      "command": "python",
+      "args": ["C:/path/to/servers/weather.py"],
+      "description": "Get weather information"
+    }
+  }
+}
+```
+
+After adding servers, regenerate the API documentation:
+
+```bash
+uv run python generate_api_docs.py
+```
+
+### 4. Launch Bridge
+
+From the cloned repo:
+
+```bash
+uv run python mcp_server_code_execution_mode.py
+```
+
+Or use uvx to run directly without cloning:
+
+```bash
+uvx --from git+https://github.com/elusznik/mcp-server-code-execution-mode mcp-server-code-execution-mode run
 ```
 
 Note on Pydantic compatibility:
@@ -284,27 +348,7 @@ pip uninstall typing  # if present; the stdlib's typing should be used
 
 And re-run the project setup (e.g. remove `.venv/` and `uv sync`).
 
-### 2. Install Dependencies
-
-Use uv to sync the project environment:
-
-```bash
-uv sync
-```
-
-### 3. Launch Bridge
-
-```bash
-uvx --from git+https://github.com/elusznik/mcp-server-code-execution-mode mcp-server-code-execution-mode run
-```
-
-If you prefer to run from a local checkout, the equivalent command is:
-
-```bash
-uv run python mcp_server_code_execution_mode.py
-```
-
-### 4. Register with Your Agent
+### 5. Register with Your Agent
 
 Add the following server configuration to your agent's MCP settings file (e.g., `mcp_config.json`, `claude_desktop_config.json`, etc.):
 
@@ -327,7 +371,7 @@ Add the following server configuration to your agent's MCP settings file (e.g., 
 }
 ```
 
-### 5. Execute Code
+### 6. Execute Code
 
 ```python
 # Use MCP tools in sandboxed code
@@ -619,6 +663,30 @@ servers explicitly.
 | Privilege escalation | ❌ | Prevented by sandbox |
 | Container escape | ❌ | Rootless + isolation |
 
+## VS Code Copilot Agent Mode
+
+This project includes a VS Code Copilot Agent configuration for seamless integration:
+
+### Setup
+
+1. The agent is defined in `.github/agents/python-sandbox.agent.md`
+2. Uses Claude Opus 4.5 model
+3. Has access to `run_python` tool and VS Code file tools
+
+### Usage
+
+Type `@python-sandbox` in VS Code Copilot Chat to invoke the agent, or select it from the dropdown.
+
+### API Documentation
+
+Run `generate_api_docs.py` to generate `~/MCPs/mcp-tools.md` which documents all available MCP server tools:
+
+```bash
+uv run python generate_api_docs.py
+```
+
+The agent reads this file to understand available APIs without making discovery calls.
+
 ## Documentation
 
 - **README.md** - This file, quick start
@@ -626,6 +694,7 @@ servers explicitly.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical deep dive
 - **[HISTORY.md](HISTORY.md)** - Evolution and lessons
 - **[STATUS.md](STATUS.md)** - Current state and roadmap
+- **[docs/](docs/)** - In-depth documentation folder
 
 ## Resources
 

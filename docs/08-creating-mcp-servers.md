@@ -626,6 +626,7 @@ Before deploying your server:
 - [ ] Logging helps with debugging
 - [ ] Environment variables are documented
 - [ ] Configuration file is created in `~/MCPs/`
+- [ ] Re-run `python generate_api_docs.py` to update `~/MCPs/mcp-tools.md`
 
 ---
 

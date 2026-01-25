@@ -97,6 +97,8 @@ class MCPBridge:
         self.clients = {}      # PersistentMCPClient objects
         self._aliases = {}     # Server name → alias mapping
         self._server_metadata_cache = {}
+        # Note: _cleanup_stale_ipc_dirs() runs on init to prune old IPC
+        # directories using LRU, keeping max 50
         
     async def execute_code(self, code, servers, timeout):
         # 1. Load requested MCP servers

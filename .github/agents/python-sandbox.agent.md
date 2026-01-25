@@ -26,8 +26,7 @@ The tool accepts:
 
 ## MCP Servers
 
-For the **full API reference** with parameters, types, and examples, read:
-**`~/MCPs/API.md`** (use `readFile` to view it)
+For the **full API reference** with parameters, types, and examples, use `readFile` to read `~/MCPs/mcp-tools.md`
 
 When you pass `servers=['name']`, async MCP clients are injected as globals:
 ```python

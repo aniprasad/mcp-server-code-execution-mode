@@ -48,6 +48,18 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 - Technical architecture documentation
 - Complete evolution history
 
+**Agent Mode:**
+- VS Code Copilot Agent configuration (`.github/agents/python-sandbox.agent.md`)
+- Static API documentation generator (`generate_api_docs.py` → `~/MCPs/mcp-tools.md`)
+- Model specification: Claude Opus 4.5
+- VS Code file tools integration (`readFile`, `fileSearch`, etc.)
+
+**Windows Support:**
+- ProactorEventLoop policy for proper async subprocess handling
+- Handle cleanup to prevent ResourceWarning on process termination
+- Volume sharing probes for Podman machine compatibility
+- LRU cleanup for IPC directories (max 50 retained)
+
 ### 🔄 In Progress
 
 **Priority 1 (Operational Readiness):**
