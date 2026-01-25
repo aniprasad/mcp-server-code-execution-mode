@@ -3,9 +3,11 @@
 Prepare the MCP Server Code Execution Mode environment.
 
 This script:
-1. Creates ~/MCPs directory structure
-2. Copies example server configs if not present
-3. Generates API documentation (mcp-tools.md)
+1. Kills any stale MCP server processes
+2. Cleans up stale sandbox containers
+3. Creates .mcp/ directory structure in the workspace
+4. Copies example server configs if not present
+5. Generates API documentation (docs/sandbox-api.md)
 
 Usage:
     uv run python prepare.py
@@ -14,17 +16,107 @@ Usage:
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 
+def kill_stale_mcp_processes(verbose: bool = True) -> int:
+    """Kill any stale MCP server processes. Returns count of processes killed."""
+    killed = 0
+    
+    if sys.platform == "win32":
+        # Windows: Use PowerShell to find and kill processes
+        try:
+            # First, find matching processes
+            result = subprocess.run(
+                ["powershell", "-Command", 
+                 "Get-Process python* 2>$null | Where-Object { $_.CommandLine -like '*mcp_server*' -or $_.CommandLine -like '*mcp-server*' } | Select-Object -ExpandProperty Id"],
+                capture_output=True, text=True, timeout=10
+            )
+            pids = [p.strip() for p in result.stdout.strip().split("\n") if p.strip()]
+            
+            if pids:
+                # Kill them
+                subprocess.run(
+                    ["powershell", "-Command", f"Stop-Process -Id {','.join(pids)} -Force"],
+                    capture_output=True, timeout=10
+                )
+                killed = len(pids)
+        except Exception as e:
+            if verbose:
+                print(f"⚠ Failed to check for stale processes: {e}")
+    else:
+        # Unix: Use pkill or pgrep
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "mcp_server|mcp-server"],
+                capture_output=True, text=True, timeout=10
+            )
+            pids = [p.strip() for p in result.stdout.strip().split("\n") if p.strip()]
+            
+            if pids:
+                subprocess.run(["kill", "-9"] + pids, capture_output=True, timeout=10)
+                killed = len(pids)
+        except FileNotFoundError:
+            pass  # pgrep not available
+        except Exception as e:
+            if verbose:
+                print(f"⚠ Failed to check for stale processes: {e}")
+    
+    if killed > 0 and verbose:
+        print(f"🔪 Killed {killed} stale MCP server process(es)")
+    
+    return killed
+
+
+def cleanup_stale_containers(verbose: bool = True) -> int:
+    """Clean up stale sandbox containers. Returns count of containers removed."""
+    removed = 0
+    
+    # Try podman first, then docker
+    for runtime in ["podman", "docker"]:
+        try:
+            # List containers matching our naming pattern
+            result = subprocess.run(
+                [runtime, "ps", "-a", "--format", "{{.Names}}", "--filter", "name=mcp-sandbox-"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                continue
+                
+            containers = [c.strip() for c in result.stdout.strip().split("\n") if c.strip()]
+            if not containers:
+                continue
+            
+            # Force remove them
+            subprocess.run(
+                [runtime, "rm", "-f"] + containers,
+                capture_output=True, timeout=15
+            )
+            removed = len(containers)
+            
+            if verbose and removed > 0:
+                print(f"🧹 Cleaned up {removed} stale sandbox container(s)")
+            break
+            
+        except FileNotFoundError:
+            continue  # Runtime not installed
+        except Exception:
+            continue
+    
+    return removed
+
+
 def get_mcps_dir() -> Path:
-    """Get the MCPs directory path."""
+    """Get the .mcp directory path (workspace-relative)."""
     import os
     state_dir = os.environ.get("MCP_BRIDGE_STATE_DIR")
     if state_dir:
         return Path(state_dir).expanduser().resolve()
-    return Path.home() / "MCPs"
+    # Default to workspace-relative .mcp/ directory
+    script_dir = Path(__file__).parent.resolve()
+    return script_dir / ".mcp"
 
 
 def create_directory_structure(mcps_dir: Path, verbose: bool = True) -> None:
@@ -50,7 +142,7 @@ def create_directory_structure(mcps_dir: Path, verbose: bool = True) -> None:
 
 
 def copy_example_configs(mcps_dir: Path, force: bool = False, verbose: bool = True) -> None:
-    """Copy example server configs to ~/MCPs if they don't exist."""
+    """Copy example server configs to .mcp/ if they don't exist."""
     script_dir = Path(__file__).parent
     servers_dir = script_dir / "servers"
     
@@ -132,6 +224,59 @@ def generate_api_docs(verbose: bool = True) -> bool:
         return False
 
 
+def generate_viz_guidelines(mcps_dir: Path, verbose: bool = True) -> None:
+    """Generate viz-guidelines.md with visualization best practices."""
+    content = """\
+# Visualization Guidelines
+
+`render_chart()` handles ALL common charts including multi-series comparisons.
+
+## Rules
+
+1. **Always use `render_chart()`** — Handles bar, line, scatter, multi-series, comparisons
+2. **Never use matplotlib/plt** — `plt.show()` does nothing (headless sandbox)
+3. **Use `series` for comparisons** — Comparing cities? Use `series='city'`
+
+## Multi-Series Pattern (e.g., comparing cities)
+
+```python
+# Comparing Chennai vs Toronto temperatures
+chart_data = []
+for day in chennai['days']:
+    chart_data.append({'date': day['date'], 'temp': day['temp_high'], 'city': 'Chennai'})
+for day in toronto['days']:
+    chart_data.append({'date': day['date'], 'temp': day['temp_high'], 'city': 'Toronto'})
+
+render_chart(chart_data, 'line', x='date', y='temp', series='city', title='Temperature Comparison')
+```
+
+## Simple Pattern
+
+```python
+data = [{'day': 'Mon', 'sales': 100}, {'day': 'Tue', 'sales': 150}]
+render_chart(data, 'bar', x='day', y='sales', title='Daily Sales')
+```
+
+## Common Mistakes
+
+```python
+# ❌ WRONG - matplotlib doesn't work in sandbox
+import matplotlib.pyplot as plt
+plt.plot(...)
+plt.show()  # Does nothing! Causes timeout.
+
+# ✅ CORRECT - render_chart handles everything
+render_chart(data, 'line', x='date', y='value', series='category')
+```
+"""
+    
+    viz_file = mcps_dir / "docs" / "viz-guidelines.md"
+    viz_file.parent.mkdir(parents=True, exist_ok=True)
+    viz_file.write_text(content, encoding="utf-8")
+    if verbose:
+        print(f"✓ Created: {viz_file}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Prepare the MCP Server Code Execution Mode environment"
@@ -142,9 +287,19 @@ def main():
         help="Overwrite existing config files"
     )
     parser.add_argument(
+        "--clear-executions",
+        action="store_true",
+        help="Clear the executions folder (removes all saved execution artifacts)"
+    )
+    parser.add_argument(
         "--skip-docs",
         action="store_true",
         help="Skip API documentation generation"
+    )
+    parser.add_argument(
+        "--skip-cleanup",
+        action="store_true",
+        help="Skip killing stale processes and containers"
     )
     parser.add_argument(
         "--quiet", "-q",
@@ -161,6 +316,22 @@ def main():
         print(f"\n🚀 Preparing MCP Server Code Execution Mode")
         print(f"   Target directory: {mcps_dir}\n")
     
+    # Step 0a: Kill stale MCP server processes
+    if not args.skip_cleanup:
+        if verbose:
+            print("🔍 Checking for stale processes...")
+        kill_stale_mcp_processes(verbose=verbose)
+        cleanup_stale_containers(verbose=verbose)
+    
+    # Step 0b: Clear executions if requested
+    if args.clear_executions:
+        executions_dir = mcps_dir / "executions"
+        if executions_dir.exists():
+            shutil.rmtree(executions_dir)
+            if verbose:
+                print(f"🗑️  Cleared: {executions_dir}")
+        executions_dir.mkdir(parents=True, exist_ok=True)
+    
     # Step 1: Create directory structure
     if verbose:
         print("📁 Creating directory structure...")
@@ -174,6 +345,11 @@ def main():
     # Step 3: Generate API docs
     if not args.skip_docs:
         generate_api_docs(verbose=verbose)
+    
+    # Step 4: Generate visualization guidelines
+    if verbose:
+        print("\n📊 Generating visualization guidelines...")
+    generate_viz_guidelines(mcps_dir, verbose=verbose)
     
     if verbose:
         print(f"\n✅ Setup complete!")

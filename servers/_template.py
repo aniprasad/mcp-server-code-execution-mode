@@ -8,7 +8,7 @@ Replace TODO comments with your implementation.
 Usage:
     python my_server.py
 
-Then register in ~/MCPs/my-server.json:
+Then register in .mcp/mcp-servers.json:
 {
   "mcpServers": {
     "my-server": {

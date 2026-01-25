@@ -92,7 +92,7 @@ The bridge includes Windows-specific handling:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MCP_BRIDGE_STATE_DIR` | Directory for persistence | `~/MCPs` |
+| `MCP_BRIDGE_STATE_DIR` | Directory for persistence | `.mcp/` |
 
 ```bash
 # Use a different state directory
@@ -215,7 +215,7 @@ The bridge searches these locations (in order):
 
 | Location | Type | Priority |
 |----------|------|----------|
-| `~/MCPs/` | Directory | 1 (Highest) |
+| `.mcp/` | Directory | 1 (Highest) |
 | `~/.config/mcp/servers/` | Directory | 2 |
 | `./mcp-servers/` | Directory | 3 |
 | `./.vscode/mcp.json` | File | 4 |
@@ -274,10 +274,10 @@ When the LLM calls `run_python`, it can specify:
 
 ```bash
 # Create config directory
-mkdir -p ~/MCPs
+mkdir -p .mcp
 
 # Create config file
-cat > ~/MCPs/mcp-servers.json << 'EOF'
+cat > .mcp/mcp-servers.json << 'EOF'
 {
   "mcpServers": {
     "weather": {
@@ -317,7 +317,7 @@ export MCP_BRIDGE_LOG_LEVEL=INFO
 
 - [ ] Install podman or rootless docker
 - [ ] Pull the container image: `podman pull python:3.14-slim`
-- [ ] Create `~/MCPs/` directory
+- [ ] Create `.mcp/` directory
 - [ ] Create at least one server configuration
 - [ ] Test the bridge: `python mcp_server_code_execution_mode.py`
 
@@ -388,7 +388,7 @@ Error: No container runtime found
 
 ## 📊 Full Configuration Example
 
-**`~/MCPs/mcp-servers.json`:**
+**`.mcp/mcp-servers.json`:**
 
 ```json
 {

@@ -191,6 +191,9 @@ def _run_entrypoint(
                         _send_response(message_id, {"success": True, "results": tools})
                     else:
                         raise AssertionError(f"Unexpected RPC payload: {payload}")
+                elif msg_type == "ready":
+                    # Container ready signal - just acknowledge it
+                    pass
                 elif msg_type == "execution_done":
                     try:
                         writer.close()
@@ -248,6 +251,7 @@ def _run_entrypoint(
     }
 
 
+@unittest.skipIf(sys.platform == "win32", "asyncio connect_read_pipe hangs on Windows")
 class EntryPointGenerationTests(unittest.TestCase):
     def test_generates_runtime_modules(self) -> None:
         user_code = (

@@ -7,7 +7,7 @@ This directory contains standalone MCP servers that can be used with mcp-server-
 1. Copy `_template.py` to create a new server
 2. Define output schemas in `schemas.py` (recommended)
 3. Implement your tools
-4. Add a config file to `~/MCPs/` or register via environment
+4. Add a config file to `.mcp/` or register via environment
 
 ## Structure
 
@@ -78,7 +78,7 @@ async def get_live_matches():
 
 ## Configuration
 
-Create `~/MCPs/my-servers.json`:
+Create `.mcp/my-servers.json`:
 
 ```json
 {
@@ -101,7 +101,7 @@ After adding servers, regenerate the API documentation:
 ```bash
 uv run python generate_api_docs.py
 ```
-This updates `~/MCPs/mcp-tools.md` which the VS Code Copilot Agent uses.
+This updates `.mcp/docs/API.md` which the VS Code Copilot Agent uses.
 
 ## API Keys
 

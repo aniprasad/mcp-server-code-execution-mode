@@ -103,9 +103,9 @@ uv run python prepare.py
 ```
 
 This script:
-- Creates `~/MCPs/` directory structure
+- Creates `.mcp/` directory structure
 - Copies example server configs (weather, soccer)
-- Generates `~/MCPs/mcp-tools.md` API documentation
+- Generates `.mcp/docs/API.md` API documentation
 
 #### 4. Test Installation
 
@@ -349,7 +349,7 @@ Type `@python-sandbox` in VS Code Copilot Chat to invoke the agent, or select it
 
 ### API Documentation
 
-Run `generate_api_docs.py` to generate `~/MCPs/mcp-tools.md` which documents all available MCP server tools:
+Run `generate_api_docs.py` to generate `.mcp/docs/API.md` which documents all available MCP server tools:
 
 ```bash
 uv run python generate_api_docs.py
@@ -544,7 +544,7 @@ Selectable via RPC: ('stub',)
 
 ### Persistent Memory System
 
-The bridge provides a built-in memory system for persisting information across sessions. Memory is stored as JSON files in `/projects/memory/` inside the container, which maps to `~/MCPs/memory/` on the host.
+The bridge provides a built-in memory system for persisting information across sessions. Memory is stored as JSON files in `/projects/memory/` inside the container, which maps to `.mcp/memory/` on the host.
 
 #### Core Memory Functions
 
@@ -617,7 +617,7 @@ update_memory("project_context", lambda ctx: {
 | **Purpose** | State, context, data | Reusable code |
 | **Access** | `load_memory()` | `import` or call directly |
 | **Container Path** | `/projects/memory/*.json` | `/projects/user_tools.py` |
-| **Host Path** | `~/MCPs/memory/` | `~/MCPs/user_tools.py` |
+| **Host Path** | `.mcp/memory/` | `.mcp/user_tools.py` |
 
 ### Execution Artifacts
 
@@ -626,7 +626,7 @@ Each code execution creates a temporary folder for artifacts like images, data f
 #### Folder Structure
 
 ```
-~/MCPs/executions/
+.mcp/executions/
 ├── 001_2026-01-25_143022/     # Execution 1
 │   ├── code.py                 # Auto-saved: the code that ran
 │   ├── output.txt              # Auto-saved: stdout + stderr
@@ -639,27 +639,21 @@ Each code execution creates a temporary folder for artifacts like images, data f
 └── ...                        # Max 50 folders (LRU cleanup)
 ```
 
-#### Saving Images
+#### Creating Charts
 
 ```python
-import matplotlib.pyplot as plt
-
-# Create a chart
-plt.figure(figsize=(8, 4))
-plt.bar(["Seattle", "Portland", "SF"], [45, 48, 55])
-plt.ylabel("Temperature °F")
-
-# Save and get clickable file:// URL
-url = save_image("weather.png", plt)
+# Use render_chart() for all visualizations
+data = [{"city": "Seattle", "temp": 45}, {"city": "Portland", "temp": 48}, {"city": "SF", "temp": 55}]
+url = render_chart(data, "bar", x="city", y="temp", title="Temperatures")
 print(f"Chart saved: {url}")
-# → file:///C:/Users/you/MCPs/executions/042_.../images/weather.png
+# → file:///C:/Users/you/MCPs/executions/042_.../images/chart.png
 ```
 
 #### Saving Files
 
 ```python
 # Save CSV data
-csv_content = "city,temp\\nSeattle,45\\nPortland,48"
+csv_content = "city,temp\nSeattle,45\nPortland,48"
 url = save_file("results.csv", csv_content)
 print(f"Data saved: {url}")
 
@@ -683,7 +677,7 @@ These are useful for debugging and reviewing past executions.
 | **Lifespan** | Permanent (until deleted) | Temporary (LRU, 50 max) |
 | **Purpose** | Cross-session data | Per-execution files |
 | **Content** | JSON data | Any files (images, CSV, etc.) |
-| **Location** | `~/MCPs/memory/` | `~/MCPs/executions/<id>/` |
+| **Location** | `.mcp/memory/` | `.mcp/executions/<id>/` |
 | **Use when** | "Remember this" | "Save this chart" |
 
 ### Custom Timeout Per Call
@@ -877,7 +871,7 @@ export MCP_BRIDGE_PIDS=256
 
 | Change Made | Action Required |
 |-------------|-----------------|
-| Added/modified MCP server config in `~/MCPs/` | Restart the bridge |
+| Added/modified MCP server config in `.mcp/` | Restart the bridge |
 | Changed environment variables | Restart the bridge |
 | Updated `mcp_server_code_execution_mode.py` | Restart the bridge |
 | Added new MCP server for VS Code Agent | Run `uv run python generate_api_docs.py` then restart |

@@ -353,7 +353,7 @@ def update_memory(key, updater):
 def save_tool(func):
     """Save a function for future sessions."""
     source = inspect.getsource(func)
-    # File is at /projects/user_tools.py, mounted from ~/MCPs/user_tools.py
+    # File is at /projects/user_tools.py, mounted from .mcp/user_tools.py
     
     # Append to user_tools.py
     with open(USER_TOOLS_PATH, "a") as f:
@@ -367,17 +367,17 @@ def save_tool(func):
 Save files and images to the current execution's folder (auto-cleaned with LRU, max 50 executions):
 
 ```python
-def save_image(image, name=None, format="PNG"):
+def save_image(filename, figure_or_bytes, *, format=None):
     """
-    Save a PIL Image or matplotlib figure.
+    Save a matplotlib figure, PIL Image, or bytes to the execution folder.
     
     Args:
-        image: PIL.Image, matplotlib figure, or bytes
-        name: Filename (optional, auto-generated if not provided)
-        format: Image format (PNG, JPEG, etc.)
+        filename: Name of the image file (e.g., "chart.png")
+        figure_or_bytes: matplotlib Figure, PIL Image, or bytes
+        format: Image format (auto-detected from filename if not specified)
     
     Returns:
-        str: Full path to the saved image
+        str: A file:// URL that can be clicked to open the image
     """
     images_dir = EXECUTION_DIR / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -393,23 +393,26 @@ def save_image(image, name=None, format="PNG"):
     return str(filepath)
 
 
-def save_file(content, name, subdir="data"):
+def save_file(filename, content, *, subdir="data"):
     """
-    Save any file content (text, binary, JSON).
+    Save a file to the execution folder.
     
     Args:
-        content: str, bytes, or JSON-serializable object
-        name: Filename with extension
-        subdir: Subdirectory in execution folder (default: "data")
+        filename: Name of the file (e.g., "results.csv", "output.json")
+        content: String or bytes content to save
+        subdir: Subdirectory within execution folder ("data", "images", or "")
     
     Returns:
-        str: Full path to the saved file
+        str: A file:// URL that can be clicked to open the file
     """
-    target_dir = EXECUTION_DIR / subdir
+    if subdir:
+        target_dir = EXECUTION_DIR / subdir
+    else:
+        target_dir = EXECUTION_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
-    filepath = target_dir / name
-    # ... write content based on type
-    return str(filepath)
+    filepath = target_dir / filename
+    # ... write content
+    return _get_host_file_url(filepath)
 
 
 def list_execution_files():
@@ -424,14 +427,11 @@ def execution_folder():
 
 **Usage Example:**
 ```python
-import matplotlib.pyplot as plt
-fig, ax = plt.subplots()
-ax.plot([1, 2, 3], [4, 5, 6])
-path = save_image(fig, "my_chart.png")
-print(f"Saved to: {path}")
-# → /projects/execution/images/my_chart.png
-
-# On host: ~/MCPs/executions/001_2025-01-25T12.30.45/images/my_chart.png
+# For charts, use render_chart() instead:
+data = [{"x": 1, "y": 4}, {"x": 2, "y": 5}, {"x": 3, "y": 6}]
+url = render_chart(data, "line", x="x", y="y")
+print(f"Saved to: {url}")
+# → file:///C:/Users/you/MCPs/executions/001_.../images/chart.png
 ```
 
 ---

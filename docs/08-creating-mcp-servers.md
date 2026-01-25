@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
 ### Step 3: Register the Server
 
-Create `~/MCPs/my-server.json`:
+Create `.mcp/mcp-servers.json`:
 
 ```json
 {
@@ -625,8 +625,8 @@ Before deploying your server:
 - [ ] Error handling is in place
 - [ ] Logging helps with debugging
 - [ ] Environment variables are documented
-- [ ] Configuration file is created in `~/MCPs/`
-- [ ] Re-run `python generate_api_docs.py` to update `~/MCPs/mcp-tools.md`
+- [ ] Configuration file is created in `.mcp/`
+- [ ] Re-run `python generate_api_docs.py` to update `.mcp/docs/API.md`
 
 ---
 

@@ -25,7 +25,7 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
   - `save_memory(key, value)` / `load_memory(key)` for data persistence
   - `update_memory(key, fn)` for atomic read-modify-write
   - `list_memories()` / `memory_exists(key)` for discovery
-  - Memory stored as JSON in `/projects/memory/` (maps to `~/MCPs/memory/`)
+  - Memory stored as JSON in `/projects/memory/` (maps to `.mcp/memory/`)
 
 **Security Model:**
 - Network disabled (`--network none`)
@@ -50,7 +50,7 @@ The MCP Server Code Execution Mode bridge is a **functional implementation** of 
 
 **Agent Mode:**
 - VS Code Copilot Agent configuration (`.github/agents/python-sandbox.agent.md`)
-- Static API documentation generator (`generate_api_docs.py` → `~/MCPs/mcp-tools.md`)
+- Static API documentation generator (`generate_api_docs.py` → `.mcp/docs/API.md`)
 - Model specification: Claude Opus 4.5
 - VS Code file tools integration (`readFile`, `fileSearch`, etc.)
 

@@ -76,7 +76,7 @@ The bridge finds server configs by scanning multiple locations:
 
 ```python
 CONFIG_SOURCES = [
-    Path.home() / "MCPs",                    # ~/MCPs/
+    Path.cwd() / \".mcp\",                     # .mcp/ (workspace-relative)
     Path.home() / ".config" / "mcp" / "servers",
     Path.home() / ".claude.json",
     Path.home() / ".cursor" / "mcp.json",
@@ -84,7 +84,7 @@ CONFIG_SOURCES = [
 ]
 ```
 
-For "weather", it might find `~/MCPs/mcp-servers.json`:
+For "weather", it might find `.mcp/mcp-servers.json`:
 
 ```json
 {

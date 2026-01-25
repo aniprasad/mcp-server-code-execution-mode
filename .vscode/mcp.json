@@ -9,6 +9,8 @@
             ],
             "env": {
                 "MCP_BRIDGE_LOG_LEVEL": "DEBUG",
+                "MCP_BRIDGE_IMAGE": "python-sandbox:latest",
+                "MCP_BRIDGE_STATE_DIR": "${workspaceFolder}/.mcp",
                 "PYTHONUNBUFFERED": "1"
             }
         }

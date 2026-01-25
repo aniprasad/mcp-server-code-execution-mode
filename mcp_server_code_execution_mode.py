@@ -130,8 +130,8 @@ logger = logging.getLogger("mcp-server-code-execution-mode")
 BRIDGE_NAME = "mcp-server-code-execution-mode"
 DEFAULT_IMAGE = os.environ.get("MCP_BRIDGE_IMAGE", "python:3.14-slim")
 DEFAULT_RUNTIME = os.environ.get("MCP_BRIDGE_RUNTIME")
-DEFAULT_TIMEOUT = int(os.environ.get("MCP_BRIDGE_TIMEOUT", "30"))
-MAX_TIMEOUT = int(os.environ.get("MCP_BRIDGE_MAX_TIMEOUT", "120"))
+DEFAULT_TIMEOUT = int(os.environ.get("MCP_BRIDGE_TIMEOUT", "120"))
+MAX_TIMEOUT = int(os.environ.get("MCP_BRIDGE_MAX_TIMEOUT", "300"))
 DEFAULT_MEMORY = os.environ.get("MCP_BRIDGE_MEMORY", "512m")
 DEFAULT_PIDS = int(os.environ.get("MCP_BRIDGE_PIDS", "128"))
 DEFAULT_CPUS = os.environ.get("MCP_BRIDGE_CPUS")
@@ -222,8 +222,8 @@ _IS_MACOS = sys.platform == "darwin"
 _IS_LINUX = sys.platform.startswith("linux")
 
 CONFIG_SOURCES = [
-    # Primary: User MCPs directory (recommended)
-    ConfigSource(Path.home() / "MCPs", "directory", name="User MCPs"),
+    # Primary: Workspace-relative .mcp directory
+    ConfigSource(Path.cwd() / ".mcp", "directory", name="Workspace MCPs"),
     # Standard MCP config directory
     ConfigSource(
         Path.home() / ".config" / "mcp" / "servers", "directory", name="Standard MCP"
@@ -793,6 +793,7 @@ class RootlessContainerSandbox:
         self.cpu_limit = cpu_limit
         self._runtime_check_lock = asyncio.Lock()
         self.runtime_idle_timeout = max(0, runtime_idle_timeout)
+        self._container_name: Optional[str] = None  # Track container name for cleanup
         self._shutdown_task: Optional[asyncio.Task[None]] = None
         self._share_lock = asyncio.Lock()
         self._shared_paths: set[str] = set()
@@ -804,10 +805,15 @@ class RootlessContainerSandbox:
                 "No container runtime found. Install podman or rootless docker and set "
                 "MCP_BRIDGE_RUNTIME if multiple runtimes are available."
             )
+        # Generate unique container name for cleanup tracking
+        import uuid
+        self._container_name = f"mcp-sandbox-{uuid.uuid4().hex[:12]}"
         cmd: List[str] = [
             self.runtime,
             "run",
             "--rm",
+            "--name",
+            self._container_name,
             "--interactive",
             "--network",
             "none",
@@ -830,6 +836,8 @@ class RootlessContainerSandbox:
             "PYTHONIOENCODING=utf-8",
             "--env",
             "PYTHONDONTWRITEBYTECODE=1",
+            "--env",
+            "MPLCONFIGDIR=/tmp/matplotlib",
             "--security-opt",
             "no-new-privileges",
             "--cap-drop",
@@ -864,7 +872,8 @@ class RootlessContainerSandbox:
             DISCOVERED_SERVERS = json.loads(__DISCOVERED_JSON__)
             USER_TOOLS_PATH = Path("/projects/user_tools.py")
             MEMORY_DIR = Path("/projects/memory")
-            EXECUTION_DIR = Path("/projects/execution")
+            EXECUTIONS_BASE = Path("/projects/executions")  # Parent folder (static mount)
+            EXECUTION_DIR = EXECUTIONS_BASE  # Will be updated per-request
             HOST_EXECUTION_PATH = os.environ.get("MCP_HOST_EXECUTION_PATH", "")
 
             _PENDING_RESPONSES = {}
@@ -893,12 +902,22 @@ class RootlessContainerSandbox:
             sys.stdout = _StreamProxy("stdout")
             sys.stderr = _StreamProxy("stderr")
 
-            async def _stdin_reader():
+            # Global stdin reader so we can track connection state
+            _STDIN_READER = None
+            _STDIN_CONNECTED = asyncio.Event() if hasattr(asyncio, 'Event') else None
+
+            async def _connect_stdin():
+                # Connect to stdin and return the reader. Must be called from asyncio.
+                global _STDIN_READER
                 loop = asyncio.get_running_loop()
                 reader = asyncio.StreamReader()
                 protocol = asyncio.StreamReaderProtocol(reader)
                 await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+                _STDIN_READER = reader
+                return reader
 
+            async def _stdin_reader_loop(reader):
+                # Read messages from stdin and dispatch them.
                 while True:
                     line = await reader.readline()
                     if not line:
@@ -917,7 +936,47 @@ class RootlessContainerSandbox:
                                 future.set_result(message.get("payload"))
                             else:
                                 future.set_exception(RuntimeError(message.get("error", "RPC error")))
+                    elif msg_type == "ping":
+                        # Health check - respond with pong immediately
+                        _send_message({"type": "pong"})
                     elif msg_type == "execute":
+                        # Update execution paths for this execution (container is persistent)
+                        new_host_path = message.get("execution_path", "")
+                        subfolder = message.get("execution_subfolder", "")
+                        if new_host_path:
+                            globals()["HOST_EXECUTION_PATH"] = new_host_path
+                        if subfolder:
+                            new_exec_dir = EXECUTIONS_BASE / subfolder
+                            new_exec_dir.mkdir(parents=True, exist_ok=True)
+                            (new_exec_dir / "images").mkdir(exist_ok=True)
+                            (new_exec_dir / "data").mkdir(exist_ok=True)
+                            globals()["EXECUTION_DIR"] = new_exec_dir
+                        # Set up MCP proxies for this execution (container may be reused with different servers)
+                        # We need to update ALL server-related globals for proper functionality
+                        new_servers_metadata = message.get("servers_metadata", [])
+                        new_discovered_servers = message.get("discovered_servers", {})
+                        
+                        # Update AVAILABLE_SERVERS with any new servers
+                        for server in new_servers_metadata:
+                            server_name = server.get("name", "")
+                            if not any(s.get("name") == server_name for s in AVAILABLE_SERVERS):
+                                AVAILABLE_SERVERS.append(server)
+                        
+                        # Update DISCOVERED_SERVERS dict
+                        DISCOVERED_SERVERS.update(new_discovered_servers)
+                        
+                        # Update LOADED_MCP_SERVERS tuple (recreate it)
+                        globals()["LOADED_MCP_SERVERS"] = tuple(s["name"] for s in AVAILABLE_SERVERS)
+                        
+                        # Create proxies for any new servers
+                        # Use _GLOBAL_NAMESPACE["mcp_servers"] to avoid closure scoping issues
+                        for server in new_servers_metadata:
+                            alias = server.get("alias", server.get("name", ""))
+                            if alias and f"mcp_{alias}" not in _GLOBAL_NAMESPACE:
+                                proxy = _MCPProxy(server)
+                                _GLOBAL_NAMESPACE["mcp_servers"][server.get("name", alias)] = proxy
+                                _GLOBAL_NAMESPACE[f"mcp_{alias}"] = proxy
+                        
                         await _EXECUTION_QUEUE.put(message.get("code"))
             # The original try/finally block for transport is removed as per instruction.
 
@@ -1178,14 +1237,31 @@ class RootlessContainerSandbox:
                 # --- Execution Artifacts ---
                 def _get_host_file_url(container_path):
                     '''Convert a container path to a host file:// URL.'''
-                    if not HOST_EXECUTION_PATH:
-                        return str(container_path)
-                    # Convert /projects/execution/... to host path
-                    rel_path = str(container_path).replace("/projects/execution/", "")
-                    # Handle Windows paths
-                    host_path = os.path.join(HOST_EXECUTION_PATH, rel_path)
+                    # Must read from globals() to get updated value (container is persistent)
+                    host_exec_path = globals().get('HOST_EXECUTION_PATH', '')
+                    if not host_exec_path:
+                        # Fallback: return container path as-is (won't work for display)
+                        return f"file://{container_path}"
+                    
+                    # Container path: /projects/executions/<subfolder>/<relative>
+                    # Host path: C:\...\<subfolder>\<relative>
+                    # Extract relative part after the subfolder
+                    container_str = str(container_path)
+                    exec_dir = globals().get('EXECUTION_DIR', EXECUTIONS_BASE)
+                    exec_dir_str = str(exec_dir)
+                    
+                    if container_str.startswith(exec_dir_str):
+                        # Extract relative path (e.g., "images/chart.png")
+                        rel_path = container_str[len(exec_dir_str):].lstrip('/')
+                    else:
+                        # Fallback: just use the filename
+                        rel_path = os.path.basename(container_str)
+                    
+                    # Build host path
+                    host_path = os.path.join(host_exec_path, rel_path)
+                    
                     # Convert to file:// URL
-                    if os.name == 'nt' or HOST_EXECUTION_PATH.startswith(('C:', 'D:', 'E:')):
+                    if os.name == 'nt' or host_exec_path.startswith(('C:', 'D:', 'E:')):
                         # Windows path
                         return f"file:///{host_path.replace(chr(92), '/')}"
                     else:
@@ -1195,33 +1271,30 @@ class RootlessContainerSandbox:
                     '''Get the current execution folder path (inside container).
                     
                     Returns:
-                        Path object pointing to /projects/execution/
+                        Path object pointing to /projects/executions/<subfolder>/
                     
                     Example:
                         folder = execution_folder()
                         custom_file = folder / "my_data.txt"
                     '''
-                    return EXECUTION_DIR
+                    return globals().get("EXECUTION_DIR", EXECUTIONS_BASE)
 
                 def save_image(filename, figure_or_bytes, *, format=None):
-                    '''Save a matplotlib figure or image bytes to the execution folder.
+                    '''Save an image (figure or bytes) to the execution folder.
+                    
+                    NOTE: For charts, use render_chart() instead - it's simpler.
                     
                     Args:
-                        filename: Name of the image file (e.g., "chart.png")
-                        figure_or_bytes: Either a matplotlib Figure, PIL Image, or bytes
+                        filename: Name of the image file (e.g., "output.png")
+                        figure_or_bytes: matplotlib Figure, PIL Image, or bytes
                         format: Image format (auto-detected from filename if not specified)
                     
                     Returns:
                         A file:// URL that can be opened in the browser
-                    
-                    Example:
-                        import matplotlib.pyplot as plt
-                        plt.plot([1, 2, 3], [4, 5, 6])
-                        url = save_image("chart.png", plt)
-                        print(f"Chart saved: {url}")
                     '''
                     import io
-                    images_dir = EXECUTION_DIR / "images"
+                    exec_dir = globals().get("EXECUTION_DIR", EXECUTIONS_BASE)
+                    images_dir = exec_dir / "images"
                     images_dir.mkdir(parents=True, exist_ok=True)
                     
                     filepath = images_dir / filename
@@ -1258,10 +1331,11 @@ class RootlessContainerSandbox:
                         url = save_file("results.csv", csv_string)
                         print(f"Data saved: {url}")
                     '''
+                    exec_dir = globals().get("EXECUTION_DIR", EXECUTIONS_BASE)
                     if subdir:
-                        target_dir = EXECUTION_DIR / subdir
+                        target_dir = exec_dir / subdir
                     else:
-                        target_dir = EXECUTION_DIR
+                        target_dir = exec_dir
                     target_dir.mkdir(parents=True, exist_ok=True)
                     
                     filepath = target_dir / filename
@@ -1281,28 +1355,107 @@ class RootlessContainerSandbox:
                     '''
                     result = {"images": [], "data": [], "other": []}
                     
-                    images_dir = EXECUTION_DIR / "images"
+                    exec_dir = globals().get("EXECUTION_DIR", EXECUTIONS_BASE)
+                    images_dir = exec_dir / "images"
                     if images_dir.exists():
                         result["images"] = [f.name for f in images_dir.iterdir() if f.is_file()]
                     
-                    data_dir = EXECUTION_DIR / "data"
+                    data_dir = exec_dir / "data"
                     if data_dir.exists():
                         result["data"] = [f.name for f in data_dir.iterdir() if f.is_file()]
                     
-                    for f in EXECUTION_DIR.iterdir():
+                    for f in exec_dir.iterdir():
                         if f.is_file():
                             result["other"].append(f.name)
                     
                     return result
 
+                # Track chart count for auto-naming
+                _chart_counter = [0]
+                
+                def render_chart(
+                    data,
+                    chart_type,
+                    x,
+                    y,
+                    *,
+                    title=None,
+                    series=None,
+                    hue=None,  # Alias for series (seaborn compat)
+                    filename=None,  # Auto-generated if not specified
+                    width=10,
+                    height=6
+                ):
+                    '''Render a chart from data using seaborn. Simple, declarative interface.
+                    
+                    Args:
+                        data: List of dicts or pandas DataFrame
+                        chart_type: One of "bar", "line", "scatter"
+                        x: Field name for X axis
+                        y: Field name for Y axis
+                        title: Optional chart title
+                        series: Optional field for grouping (creates colored bars/lines). Alias: hue
+                        filename: Output filename (auto-generated if not specified)
+                        width: Chart width in inches (default: 10)
+                        height: Chart height in inches (default: 6)
+                    
+                    Returns:
+                        file:// URL to the saved chart
+                    
+                    Example:
+                        data = [{"day": "Mon", "temp": 25}, {"day": "Tue", "temp": 28}]
+                        url = render_chart(data, "bar", x="day", y="temp", title="Temps")
+                        print(url)
+                    '''
+                    import pandas as pd
+                    import seaborn as sns
+                    import matplotlib.pyplot as plt
+                    
+                    # Auto-generate filename if not specified
+                    if filename is None:
+                        _chart_counter[0] += 1
+                        filename = f"chart_{_chart_counter[0]}.png"
+                    
+                    # hue is an alias for series
+                    grouping = series or hue
+                    
+                    # Convert to DataFrame if needed
+                    df = pd.DataFrame(data) if not hasattr(data, 'columns') else data
+                    
+                    # Create figure
+                    fig, ax = plt.subplots(figsize=(width, height))
+                    
+                    # Map chart types to seaborn functions
+                    if chart_type == "bar":
+                        sns.barplot(data=df, x=x, y=y, hue=grouping, ax=ax)
+                    elif chart_type == "line":
+                        sns.lineplot(data=df, x=x, y=y, hue=grouping, marker="o", ax=ax)
+                    elif chart_type in ("scatter", "point"):
+                        sns.scatterplot(data=df, x=x, y=y, hue=grouping, ax=ax)
+                    else:
+                        raise ValueError(f"Unknown chart_type: {chart_type}. Use 'bar', 'line', or 'scatter'")
+                    
+                    if title:
+                        ax.set_title(title, fontweight='bold')
+                    
+                    plt.tight_layout()
+                    
+                    # Save, print URL (so it shows in chat), and return
+                    url = save_image(filename, fig)
+                    plt.close(fig)
+                    print(url)  # Auto-print so image shows in chat
+                    return url
+
                 runtime_module.execution_folder = execution_folder
                 runtime_module.save_image = save_image
                 runtime_module.save_file = save_file
                 runtime_module.list_execution_files = list_execution_files
+                runtime_module.render_chart = render_chart
                 globals()["execution_folder"] = execution_folder
                 globals()["save_image"] = save_image
                 globals()["save_file"] = save_file
                 globals()["list_execution_files"] = list_execution_files
+                globals()["render_chart"] = render_chart
 
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
@@ -1321,13 +1474,11 @@ class RootlessContainerSandbox:
                     "   - `list_memories()` - List all saved memories\\n"
                     "   - `update_memory(key, lambda x: ...)` - Update existing memory\\n"
                     "   - `delete_memory(key)` - Remove a memory\\n"
-                    "5. ARTIFACTS: Save files from this execution (auto-cleaned after 50 runs):\\n"
-                    "   - `save_image('chart.png', plt)` - Save matplotlib figure, returns file:// URL\\n"
-                    "   - `save_file('data.csv', content)` - Save text/bytes, returns file:// URL\\n"
-                    "   - `list_execution_files()` - List saved artifacts\\n"
-                    "6. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
+                    "5. CHARTS: `render_chart(data, 'bar', x='field', y='value')` - Returns file:// URL. Do NOT use matplotlib directly.\\n"
+                    "6. FILES: `save_file('data.csv', content)` - Save text/bytes, returns file:// URL\\n"
+                    "7. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
                     "query_tool_docs(server), describe_server(name).\\n"
-                    "7. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
+                    "8. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
                 )
 
                 _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)
@@ -1611,6 +1762,22 @@ class RootlessContainerSandbox:
             _GLOBAL_NAMESPACE.setdefault("mcp", __import__("mcp"))
             # Make runtime available as a global so users don't need to import it
             _GLOBAL_NAMESPACE["runtime"] = runtime_module
+            
+            # Add all sandbox helpers to global namespace
+            _GLOBAL_NAMESPACE["save_tool"] = runtime_module.save_tool
+            _GLOBAL_NAMESPACE["save_memory"] = runtime_module.save_memory
+            _GLOBAL_NAMESPACE["load_memory"] = runtime_module.load_memory
+            _GLOBAL_NAMESPACE["delete_memory"] = runtime_module.delete_memory
+            _GLOBAL_NAMESPACE["list_memories"] = runtime_module.list_memories
+            _GLOBAL_NAMESPACE["update_memory"] = runtime_module.update_memory
+            _GLOBAL_NAMESPACE["memory_exists"] = runtime_module.memory_exists
+            _GLOBAL_NAMESPACE["get_memory_info"] = runtime_module.get_memory_info
+            _GLOBAL_NAMESPACE["execution_folder"] = runtime_module.execution_folder
+            _GLOBAL_NAMESPACE["save_image"] = runtime_module.save_image
+            _GLOBAL_NAMESPACE["save_file"] = runtime_module.save_file
+            _GLOBAL_NAMESPACE["list_execution_files"] = runtime_module.list_execution_files
+            _GLOBAL_NAMESPACE["render_chart"] = runtime_module.render_chart
+            
             LOADED_MCP_SERVERS = tuple(server["name"] for server in AVAILABLE_SERVERS)
             mcp_servers = {}
             for server in AVAILABLE_SERVERS:
@@ -1634,13 +1801,70 @@ class RootlessContainerSandbox:
                     traceback.print_exc()
 
             async def _main_loop():
-                asyncio.create_task(_stdin_reader())
+                # CRITICAL: Connect stdin and send ready signal BEFORE starting the reader loop
+                # This ensures the host doesn't send messages before we're ready to receive them
+                try:
+                    reader = await _connect_stdin()
+                except Exception as e:
+                    print(f"[sandbox] FATAL: Failed to connect stdin: {e}", file=sys.__stderr__)
+                    sys.exit(1)
+                
+                # NOW we're ready to receive messages
+                _send_message({"type": "ready"})
+                
+                # Start the stdin reader as a task with error handling
+                async def _guarded_stdin_reader():
+                    try:
+                        await _stdin_reader_loop(reader)
+                    except Exception as e:
+                        print(f"[sandbox] FATAL: stdin reader crashed: {e}", file=sys.__stderr__)
+                        sys.exit(1)
+                
+                asyncio.create_task(_guarded_stdin_reader())
+                
                 while True:
                     code = await _EXECUTION_QUEUE.get()
                     await _execute_code(code)
                     _send_message({"type": "execution_done"})
 
+            # Pre-import heavy libraries BEFORE asyncio starts.
+            # This prevents matplotlib's synchronous import from blocking the event loop
+            # and interfering with the stdin reader task during RPC calls.
+            def _preload_libraries():
+                try:
+                    import matplotlib
+                    matplotlib.use('Agg')  # Non-GUI backend
+                    import matplotlib.pyplot as plt
+                    
+                    # Monkey-patch plt.show() to be a no-op that warns
+                    # This prevents hangs when agents use matplotlib directly
+                    _original_show = plt.show
+                    def _safe_show(*args, **kwargs):
+                        import sys
+                        print(
+                            "[sandbox] WARNING: plt.show() does nothing in headless mode. "
+                            "Use render_chart() or save_image(fig) instead.",
+                            file=sys.stderr
+                        )
+                    plt.show = _safe_show
+                except ImportError:
+                    pass
+                try:
+                    import pandas
+                except ImportError:
+                    pass
+                try:
+                    import numpy
+                except ImportError:
+                    pass
+                try:
+                    import seaborn
+                except ImportError:
+                    pass
+
             if __name__ == "__main__":
+                _preload_libraries()
+                # Ready signal is sent inside _main_loop AFTER stdin is connected
                 try:
                     asyncio.run(_main_loop())
                 except KeyboardInterrupt:
@@ -1808,6 +2032,37 @@ class RootlessContainerSandbox:
                 stderr="Repeated podman machine start attempts failed",
             )
 
+    async def _ping_container(self, timeout: float = 5.0) -> bool:
+        """Send a ping to the container and wait for pong. Returns True if healthy."""
+        if not self._process or self._process.returncode is not None:
+            return False
+        
+        process = self._process
+        assert process.stdin is not None
+        assert process.stdout is not None
+        
+        try:
+            # Send ping
+            process.stdin.write(b'{"type":"ping"}\n')
+            await process.stdin.drain()
+            
+            # Wait for pong (need to read from stdout)
+            async def _wait_for_pong() -> bool:
+                assert process.stdout is not None
+                line = await process.stdout.readline()
+                if not line:
+                    return False
+                try:
+                    msg = json.loads(line.decode())
+                    return msg.get("type") == "pong"
+                except Exception:
+                    return False
+            
+            return await asyncio.wait_for(_wait_for_pong(), timeout=timeout)
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.warning("Container health check failed: %s", e)
+            return False
+
     async def _ensure_started(
         self,
         servers_metadata: Sequence[Dict[str, object]],
@@ -1815,9 +2070,20 @@ class RootlessContainerSandbox:
         container_env: Optional[Dict[str, str]],
         volume_mounts: Optional[Sequence[str]],
         host_dir: Path,
+        startup_timeout: int = 30,
     ) -> None:
+        # If process exists, verify it's still healthy with a ping
         if self._process and self._process.returncode is None:
-            return
+            if await self._ping_container(timeout=5.0):
+                logger.debug("Container health check passed")
+                return
+            else:
+                # Container is unresponsive, kill and restart
+                logger.warning("Container unresponsive, restarting...")
+                self._process.kill()
+                await self._process.wait()
+                await self._force_remove_container()
+                self._process = None
 
         await self._ensure_runtime_ready()
         if not self.runtime:
@@ -1847,6 +2113,38 @@ class RootlessContainerSandbox:
             stdout=aio_subprocess.PIPE,
             stderr=aio_subprocess.PIPE,
         )
+        
+        # Wait for container "ready" signal with startup timeout
+        # This detects hung containers early instead of waiting for full execution timeout
+        process = self._process
+        assert process is not None
+        assert process.stdout is not None
+        
+        async def _wait_for_ready() -> None:
+            assert process.stdout is not None
+            line = await process.stdout.readline()
+            if not line:
+                raise SandboxError("Container exited before becoming ready")
+            try:
+                message = json.loads(line.decode())
+                if message.get("type") != "ready":
+                    raise SandboxError(f"Expected 'ready' message, got: {message.get('type')}")
+                logger.debug("Container ready signal received")
+            except json.JSONDecodeError as e:
+                raise SandboxError(f"Invalid container startup message: {e}") from e
+        
+        try:
+            await asyncio.wait_for(_wait_for_ready(), timeout=startup_timeout)
+        except asyncio.TimeoutError as exc:
+            logger.error("Container failed to start within %ds - killing", startup_timeout)
+            process.kill()
+            await process.wait()
+            await self._force_remove_container()
+            self._process = None
+            raise SandboxError(
+                f"Container failed to become ready within {startup_timeout}s. "
+                "This may indicate Podman/Docker issues on your system."
+            ) from exc
 
     async def execute(
         self,
@@ -1858,6 +2156,7 @@ class RootlessContainerSandbox:
         container_env: Optional[Dict[str, str]] = None,
         volume_mounts: Optional[Sequence[str]] = None,
         host_dir: Optional[Path] = None,
+        host_execution_path: str = "",
         rpc_handler: Optional[
             Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]
         ] = None,
@@ -1878,8 +2177,18 @@ class RootlessContainerSandbox:
         assert process.stdout is not None
         assert process.stderr is not None
 
-        # Send code execution request
-        request = {"type": "execute", "code": code}
+        # Send code execution request (include execution path and subfolder for file:// URLs)
+        # Extract subfolder name from host_execution_path (e.g., "003_2026-01-25_...")
+        subfolder = Path(host_execution_path).name if host_execution_path else ""
+        # Include servers_metadata so container can set up MCP proxies (for reused containers)
+        request = {
+            "type": "execute",
+            "code": code,
+            "execution_path": host_execution_path,
+            "execution_subfolder": subfolder,
+            "servers_metadata": list(servers_metadata),
+            "discovered_servers": dict(discovered_servers),
+        }
         try:
             process.stdin.write(json.dumps(request).encode("utf-8") + b"\n")
             await process.stdin.drain()
@@ -1938,9 +2247,21 @@ class RootlessContainerSandbox:
                             json.dumps(reply, separators=(",", ":")).encode("utf-8")
                             + b"\n"
                         )
+                        logger.debug("Writing RPC response to container stdin: %d bytes", len(data))
                         process.stdin.write(data)
                         await process.stdin.drain()
-                    except Exception:
+                        # WINDOWS FIX: Ensure data is flushed to the OS pipe
+                        # On Windows, drain() may not be sufficient to push data through
+                        if hasattr(process.stdin, 'transport') and hasattr(process.stdin.transport, '_pipe'):
+                            try:
+                                import _winapi
+                                # Force flush the Windows pipe
+                                pass  # drain() should be enough, but log for debugging
+                            except ImportError:
+                                pass
+                        logger.debug("RPC response written and drained successfully")
+                    except Exception as exc:
+                        logger.error("Failed to deliver RPC response: %s", exc)
                         stderr_chunks.append("Failed to deliver RPC response\n")
                         break
                 else:
@@ -1985,14 +2306,12 @@ class RootlessContainerSandbox:
         try:
             await asyncio.wait_for(stdout_task, timeout=timeout)
         except asyncio.TimeoutError as exc:
-            # We don't kill the process on timeout, we just stop waiting?
-            # Or do we kill it?
-            # If we don't kill it, the loop is still running.
-            # We should probably kill it to clear state?
-            # Or send a "cancel" message?
-            # For now, let's kill it on timeout to be safe.
+            # Kill the process and force remove container
             process.kill()
             await process.wait()
+            # Force remove container to prevent accumulation
+            await self._force_remove_container()
+            self._process = None
             raise SandboxTimeout(
                 f"Execution timed out after {timeout}s",
                 stdout="".join(stdout_chunks),
@@ -2005,6 +2324,23 @@ class RootlessContainerSandbox:
         # We don't check return code because process is still running.
         return SandboxResult(True, 0, stdout_text, stderr_text)
 
+    async def _force_remove_container(self) -> None:
+        """Force remove the current container if it exists."""
+        if not self._container_name or not self.runtime:
+            return
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                self.runtime, "rm", "-f", self._container_name,
+                stdout=aio_subprocess.DEVNULL,
+                stderr=aio_subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=5)
+            logger.debug("Force removed container: %s", self._container_name)
+        except Exception as e:
+            logger.debug("Failed to force remove container %s: %s", self._container_name, e)
+        finally:
+            self._container_name = None
+
     async def _stop_runtime(self) -> None:
         if self._process:
             try:
@@ -2013,6 +2349,9 @@ class RootlessContainerSandbox:
             except Exception:
                 pass
             self._process = None
+        
+        # Force remove container (handles cases where --rm didn't clean up)
+        await self._force_remove_container()
 
         if not self.runtime:
             return
@@ -2208,7 +2547,8 @@ class SandboxInvocation:
         if state_dir_env:
             base_dir = Path(state_dir_env).expanduser()
         else:
-            base_dir = Path.home() / "MCPs"
+            # Default to workspace-relative .mcp/ directory
+            base_dir = Path(__file__).parent / ".mcp"
         base_dir = base_dir.resolve()
         base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2254,7 +2594,8 @@ class SandboxInvocation:
 
         self.volume_mounts.append(f"{host_dir}:/ipc:rw")
         self.volume_mounts.append(f"{memory_dir}:/projects/memory:rw")
-        self.volume_mounts.append(f"{self.execution_dir}:/projects/execution:rw")
+        # Mount parent executions folder - subfolder is passed per-request
+        self.volume_mounts.append(f"{executions_dir}:/projects/executions:rw")
         # Mount user_tools.py at root (separate from memory data)
         user_tools_file = memory_dir.parent / "user_tools.py"
         user_tools_file.touch(exist_ok=True)  # Ensure file exists for mount
@@ -2383,7 +2724,44 @@ class SandboxInvocation:
             logger.info("handle_rpc: calling tool %s with args %s", tool_name, arguments)
             result = await client_obj.call_tool(tool_name, arguments)
             logger.info("handle_rpc: tool result received: %s", str(result)[:200])
-            return {"success": True, "result": result}
+            
+            # Detect "Unknown tool" responses and add helpful hint about positional args
+            result_str = str(result)
+            if "Unknown tool:" in result_str:
+                # Check if the "tool name" looks like a data value (city, date, etc.)
+                if tool_name and not tool_name.startswith("get_") and not tool_name.startswith("list_"):
+                    hint = (
+                        f"\n\nHINT: '{tool_name}' looks like a value, not a tool name. "
+                        "Did you use positional arguments? MCP tools require KEYWORD arguments:\n"
+                        f"  ✅ await mcp_{server}.get_forecast(city='{tool_name}', days=5)\n"
+                        f"  ❌ await mcp_{server}.get_forecast('{tool_name}', days=5)"
+                    )
+                    # Append hint to the result content
+                    if isinstance(result, dict) and "content" in result:
+                        for item in result.get("content", []):
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                item["text"] = item.get("text", "") + hint
+                                break
+            
+            # Auto-unwrap MCP content format to return clean data
+            # Transform {'content': [{'type': 'text', 'text': '{"city": ...}'}]} -> parsed JSON
+            unwrapped = result
+            if isinstance(result, dict) and "content" in result:
+                content = result.get("content", [])
+                if content and isinstance(content, list):
+                    first = content[0]
+                    if isinstance(first, dict) and first.get("type") == "text":
+                        text = first.get("text", "")
+                        # Try to parse as JSON
+                        try:
+                            import json
+                            unwrapped = json.loads(text)
+                            logger.debug("Auto-unwrapped MCP result to JSON")
+                        except (json.JSONDecodeError, TypeError):
+                            # Not JSON, return as plain text
+                            unwrapped = text
+            
+            return {"success": True, "result": unwrapped}
         except Exception as exc:  # pragma: no cover
             logger.debug("MCP proxy call failed", exc_info=True)
             return {"success": False, "error": str(exc)}
@@ -2877,6 +3255,7 @@ class MCPBridge:
                 container_env=invocation.container_env,
                 volume_mounts=invocation.volume_mounts,
                 host_dir=invocation.host_dir,
+                host_execution_path=invocation.host_execution_path,
                 rpc_handler=invocation.handle_rpc,
             )
             logger.info("execute_code: sandbox.execute complete")
@@ -2915,8 +3294,40 @@ app = Server(BRIDGE_NAME)
 _server_names_cache: List[str] = []
 _server_names_populated = False
 
-# MCP base directory for cleanup
-_MCP_BASE_DIR = Path.home() / "MCPs"
+
+def _get_mcp_base_dir() -> Path:
+    """Get the MCP base directory, respecting MCP_BRIDGE_STATE_DIR env var."""
+    state_dir = os.environ.get("MCP_BRIDGE_STATE_DIR")
+    if state_dir:
+        return Path(state_dir).expanduser().resolve()
+    return (Path(__file__).parent / ".mcp").resolve()
+
+
+def _cleanup_stale_containers() -> None:
+    """Remove any stale mcp-sandbox-* containers from previous runs."""
+    runtime = detect_runtime()
+    if not runtime:
+        return
+    try:
+        # List containers matching our naming pattern
+        import subprocess
+        result = subprocess.run(
+            [runtime, "ps", "-a", "--format", "{{.Names}}", "--filter", "name=mcp-sandbox-"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return
+        containers = [c.strip() for c in result.stdout.strip().split("\n") if c.strip()]
+        if not containers:
+            return
+        # Force remove them
+        subprocess.run(
+            [runtime, "rm", "-f"] + containers,
+            capture_output=True, timeout=15
+        )
+        logger.info("Cleaned up %d stale sandbox containers", len(containers))
+    except Exception as e:
+        logger.debug("Container cleanup error (non-fatal): %s", e)
 
 
 def _cleanup_stale_ipc_dirs(max_dirs: int = 50) -> None:
@@ -2926,12 +3337,13 @@ def _cleanup_stale_ipc_dirs(max_dirs: int = 50) -> None:
     This bounds disk usage while preserving recent dirs for debugging.
     """
     try:
-        if not _MCP_BASE_DIR.exists():
+        base_dir = _get_mcp_base_dir()
+        if not base_dir.exists():
             return
         
         # Find all IPC directories with their modification times
         ipc_dirs: List[Tuple[Path, float]] = []
-        for item in _MCP_BASE_DIR.iterdir():
+        for item in base_dir.iterdir():
             if item.is_dir() and item.name.startswith("mcp-bridge-ipc-"):
                 try:
                     mtime = item.stat().st_mtime
@@ -3010,8 +3422,9 @@ async def _get_server_names() -> List[str]:
     if _server_names_populated:
         return _server_names_cache
     
-    # Clean up stale IPC directories on startup
+    # Clean up stale IPC directories and containers on startup
     _cleanup_stale_ipc_dirs()
+    _cleanup_stale_containers()
     
     try:
         # Just discover server names, don't connect or list tools
@@ -3138,6 +3551,11 @@ async def call_tool(name: str, arguments: Dict[str, object]) -> CallToolResult:
             summary="Missing 'code' argument",
             error="Missing 'code' argument",
         )
+
+    # Warn if raw matplotlib is detected - recommend render_chart() instead
+    if "import matplotlib" in code or "plt.subplots" in code or "plt.figure" in code:
+        if "render_chart" not in code:
+            logger.warning("Code uses raw matplotlib. Consider using render_chart() instead.")
 
     servers = arguments.get("servers", [])
     if not isinstance(servers, list):

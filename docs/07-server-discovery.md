@@ -20,9 +20,9 @@ The bridge searches multiple locations for MCP server configurations. It checks 
 
 ```python
 CONFIG_SOURCES = [
-    # User MCPs directory (recommended)
-    ConfigSource(Path.home() / "MCPs", "directory"),
-    # → ~/MCPs/*.json
+    # Workspace-relative .mcp directory (recommended)
+    ConfigSource(Path.cwd() / ".mcp", "directory"),
+    # → .mcp/*.json
     
     # Standard MCP config
     ConfigSource(Path.home() / ".config" / "mcp" / "servers", "directory"),
@@ -84,10 +84,10 @@ Config files use this JSON structure:
 
 ### Directory Format
 
-For directories like `~/MCPs/`, the bridge reads all `.json` files:
+For directories like `.mcp/`, the bridge reads all `.json` files:
 
 ```
-~/MCPs/
+.mcp/
 ├── weather.json       # Contains weather server config
 ├── soccer.json        # Contains soccer server config
 └── mcp-servers.json   # Can contain multiple servers
@@ -326,12 +326,12 @@ The alias is used for proxy names: `mcp_weather`, `mcp_my_cool_server`, etc.
 ### Step 1: Create Server Directory
 
 ```bash
-mkdir ~/MCPs
+mkdir .mcp
 ```
 
 ### Step 2: Add Configuration
 
-Create `~/MCPs/mcp-servers.json`:
+Create `.mcp/mcp-servers.json`:
 
 ```json
 {
@@ -480,7 +480,7 @@ Bridge starts
 ├────────────────────────────────────┬─────────────────────────────────────┤
 │           Location                 │        Type                          │
 ├────────────────────────────────────┼─────────────────────────────────────┤
-│  ~/MCPs/                           │  Directory (recommended)             │
+│  .mcp/                             │  Directory (recommended)             │
 │  ~/.config/mcp/servers/            │  Directory                           │
 │  ./mcp-servers/                    │  Directory                           │
 │  ./.vscode/mcp.json                │  File                                │

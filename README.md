@@ -237,7 +237,7 @@ if memory_exists("user_preferences"):
     prefs = load_memory("user_preferences")
 ```
 
-Memory files are stored in `/projects/memory/` inside the container, which maps to `~/MCPs/memory/` on the host. This persists across sessions and container restarts.
+Memory files are stored in `/projects/memory/` inside the container, which maps to `.mcp/memory/` on the host. This persists across sessions and container restarts.
 
 ### Discovery Workflow
 
@@ -280,6 +280,32 @@ podman pull python:3.13-slim
 docker pull python:3.13-slim
 ```
 
+**Optional: Build custom image with visualization packages:**
+
+The default `python:3.13-slim` image doesn't include matplotlib/pandas. For visualization support, build the included custom image:
+
+```bash
+# With Podman
+podman build -t python-sandbox:latest .
+
+# Or with Docker
+docker build -t python-sandbox:latest .
+```
+
+Then set the environment variable to use it:
+```bash
+export MCP_BRIDGE_IMAGE=python-sandbox:latest
+```
+
+Or in VS Code's `.vscode/mcp.json`, add to the server's `env`:
+```json
+"env": {
+  "MCP_BRIDGE_IMAGE": "python-sandbox:latest"
+}
+```
+
+The custom image includes: matplotlib, pillow, pandas, numpy, seaborn.
+
 ### 2. Clone and Install
 
 ```bash
@@ -289,15 +315,15 @@ cd mcp-server-code-execution-mode
 # Create virtual environment and install dependencies
 uv sync
 
-# Set up ~/MCPs directory and generate API docs
+# Set up .mcp/ directory and generate API docs
 uv run python prepare.py
 ```
 
-> **Note:** `uv sync` automatically creates a `.venv/` virtual environment. The `prepare.py` script creates `~/MCPs/`, copies example configs, and generates API documentation.
+> **Note:** `uv sync` automatically creates a `.venv/` virtual environment. The `prepare.py` script creates `.mcp/`, copies example configs, and generates API documentation.
 
 ### 3. Configure MCP Servers (Optional)
 
-The `prepare.py` script already creates `~/MCPs/` and copies example configs. To add more servers, edit `~/MCPs/mcp-servers.json`:
+The `prepare.py` script already creates `.mcp/` and copies example configs. To add more servers, edit `.mcp/mcp-servers.json`:
 
 ```json
 {
@@ -476,7 +502,7 @@ Unlike traditional MCP servers that preload every tool definition (sometimes 30k
 | `MCP_BRIDGE_CPUS` | - | CPU limit |
 | `MCP_BRIDGE_CONTAINER_USER` | 65534:65534 | Run as UID:GID |
 | `MCP_BRIDGE_RUNTIME_IDLE_TIMEOUT` | 300s | Shutdown delay |
-| `MCP_BRIDGE_STATE_DIR` | `~/MCPs` | Host directory for IPC sockets and temp state |
+| `MCP_BRIDGE_STATE_DIR` | `.mcp/` | Host directory for state (memory, executions, configs) |
 | `MCP_BRIDGE_OUTPUT_MODE` | `compact` | Response text format (`compact` or `toon`) |
 | `MCP_BRIDGE_LOG_LEVEL` | `INFO` | Bridge logging verbosity |
 
@@ -488,7 +514,7 @@ The bridge automatically discovers MCP servers from multiple configuration sourc
 
 | Location | Name | Priority |
 |----------|------|----------|
-| `~/MCPs/` | User MCPs | Highest |
+| `.mcp/` | Workspace MCPs | Highest |
 | `~/.config/mcp/servers/` | Standard MCP | |
 | `./mcp-servers/` | Local Project | |
 | `./.vscode/mcp.json` | VS Code Workspace | |
@@ -503,7 +529,7 @@ The bridge automatically discovers MCP servers from multiple configuration sourc
 
 > **Note:** Earlier sources take precedence. If the same server is defined in multiple locations, the first one wins.
 
-**Example Server** (`~/MCPs/filesystem.json`):
+**Example Server** (`.mcp/mcp-servers.json`):
 
 ```json
 {
@@ -529,12 +555,15 @@ When you rely on `docker mcp gateway run` to expose third-party MCP servers, the
 
 ### State Directory & Volume Sharing
 
-Runtime artifacts live under `~/MCPs/` by default. Set `MCP_BRIDGE_STATE_DIR` to relocate them.
+Runtime artifacts live under `.mcp/` by default (workspace-relative). Set `MCP_BRIDGE_STATE_DIR` to relocate them.
 
 **Directory Structure:**
 
 ```
-~/MCPs/
+.mcp/
+├── docs/                   # Generated documentation
+│   ├── API.md             # MCP server API reference
+│   └── viz-guidelines.md  # Chart styling guidelines
 ├── memory/                 # Persistent cross-session data
 │   └── *.json             # save_memory() data files
 ├── user_tools.py          # save_tool() custom functions
@@ -544,15 +573,14 @@ Runtime artifacts live under `~/MCPs/` by default. Set `MCP_BRIDGE_STATE_DIR` to
 │       ├── output.txt     # Auto-saved stdout/stderr
 │       ├── images/        # save_image() output
 │       └── data/          # save_file() output
-├── mcp-servers.json       # User MCP server config
-└── mcp-tools.md           # Generated API docs
+└── mcp-servers.json       # User MCP server config
 ```
 
 **Volume Sharing Notes:**
 
 - When the selected runtime is Podman, the bridge automatically issues `podman machine set --rootful --now --volume <state_dir>:<state_dir>` so the VM can mount the directory. On older `podman machine` builds that do not support `--volume`, the bridge now probes the VM with `podman machine ssh test -d <state_dir>` and proceeds if the share is already available.
 - Docker Desktop does not expose a CLI for file sharing; ensure the chosen state directory is marked as shared in Docker Desktop → Settings → Resources → File Sharing before running the bridge.
-- To verify a share manually, run `docker run --rm -v ~/MCPs:/ipc alpine ls /ipc` (or the Podman equivalent) and confirm the files are visible.
+- To verify a share manually, run `docker run --rm -v .mcp:/ipc alpine ls /ipc` (or the Podman equivalent) and confirm the files are visible.
 
 ## Usage Examples
 
@@ -699,7 +727,7 @@ Type `@python-sandbox` in VS Code Copilot Chat to invoke the agent, or select it
 
 ### API Documentation
 
-Run `generate_api_docs.py` to generate `~/MCPs/mcp-tools.md` which documents all available MCP server tools:
+Run `generate_api_docs.py` to generate `.mcp/docs/API.md` which documents all available MCP server tools:
 
 ```bash
 uv run python generate_api_docs.py

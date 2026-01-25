@@ -30,6 +30,7 @@ class InProcessSandbox:
         container_env: Optional[Dict[str, str]] = None,
         volume_mounts: Optional[Sequence[str]] = None,
         host_dir: Optional[Path] = None,
+        host_execution_path: str = "",
         rpc_handler: Optional[
             Callable[[Dict[str, object]], Awaitable[Dict[str, object]]]
         ] = None,
@@ -178,10 +179,11 @@ class StubIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self._state_dir.cleanup()
 
     async def test_stub_echo_tool(self) -> None:
+        # The MCP result is auto-unwrapped from {'content': [{'text': '...'}]} to plain text
         code = "\n".join(
             [
                 "result = await mcp_stub.echo(message='hello world')",
-                "assert result['content'][0]['text'] == 'hello world'",
+                "assert result == 'hello world', f'Expected \"hello world\", got {result!r}'",
             ]
         )
 
