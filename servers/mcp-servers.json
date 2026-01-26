@@ -9,6 +9,11 @@
       "command": "python", 
       "args": ["${workspaceFolder}/servers/sports.py"],
       "description": "Get live scores, standings, and schedules for NFL, NBA, MLB, NHL, Soccer, and F1"
+    },
+    "stocks": {
+      "command": "python",
+      "args": ["${workspaceFolder}/servers/stocks.py"],
+      "description": "Get real-time stock quotes, historical prices, market indices, and cryptocurrency data"
     }
   }
 }

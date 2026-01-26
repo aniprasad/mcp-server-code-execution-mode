@@ -24,9 +24,9 @@ from mcp.types import TextContent, Tool
 
 # Handle both direct execution and import from parent
 try:
-    from schemas import WeatherInfo, ForecastInfo, ForecastDay, schema_to_description
+    from schemas import WeatherInfo, ForecastInfo, ForecastDay, CoordinatesInfo, schema_to_description
 except ImportError:
-    from .schemas import WeatherInfo, ForecastInfo, ForecastDay, schema_to_description
+    from .schemas import WeatherInfo, ForecastInfo, ForecastDay, CoordinatesInfo, schema_to_description
 
 SERVER_NAME = "weather"
 
@@ -111,7 +111,10 @@ Each day in the 'days' list:
         ),
         Tool(
             name="get_coordinates",
-            description="Get latitude/longitude for a city. Useful for debugging.",
+            description=f"""Get latitude/longitude for a city. Useful for location-based queries.
+
+Output Schema:
+{schema_to_description(CoordinatesInfo)}""",
             inputSchema={
                 "type": "object",
                 "properties": {

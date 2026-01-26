@@ -17,6 +17,7 @@ servers/
 ├── schemas.py        # Shared Pydantic models for output types
 ├── weather.py        # Weather API (Open-Meteo, free)
 ├── sports.py         # Sports API (ESPN, free)
+├── stocks.py         # Stock/crypto API (Yahoo Finance, free)
 ├── requirements.txt  # Dependencies
 └── README.md
 ```
@@ -24,9 +25,10 @@ servers/
 ## Usage in Sandbox
 
 ```python
-# Pass servers=["weather", "sports"] to load them
+# Pass servers=["weather", "sports", "stocks"] to load them
 weather = await mcp_weather.get_weather(city="Seattle")
 games = await mcp_sports.scoreboard(sport="nba")
+quote = await mcp_stocks.quote(symbol="AAPL")
 
 # Combine data across servers:
 for game in games["games"]:
@@ -52,6 +54,16 @@ for game in games["games"]:
   - `team_schedule(sport, team)` - Team's schedule
   - `news(sport, limit)` - Latest headlines
   - `list_sports()` - All available sport codes
+
+### stocks
+- **API**: [Yahoo Finance](https://finance.yahoo.com/) (free, no API key)
+- **Markets**: US stocks, ETFs, indices, cryptocurrencies
+- **Tools**:
+  - `quote(symbol)` - Real-time stock price with change, volume, market cap
+  - `history(symbol, period)` - Historical OHLCV data (1d, 5d, 1mo, 3mo, 6mo, 1y, etc.)
+  - `search(query)` - Search for ticker symbols by company name
+  - `market_summary()` - Major indices (S&P 500, Dow, NASDAQ, etc.)
+  - `crypto(symbol)` - Cryptocurrency prices (bitcoin, ethereum, etc.)
 
 ## Output Schemas
 
@@ -83,6 +95,8 @@ class GameInfo(BaseModel):
 | `GameInfo` | sports.scoreboard, team_schedule | Game/match information |
 | `StandingEntry` | sports.standings | Team position in standings |
 | `NewsArticle` | sports.news | News headline |
+| `StockQuote` | stocks.quote, stocks.crypto | Real-time stock/crypto quote |
+| `HistoricalPrice` | stocks.history | OHLCV price data point |
 
 ## Configuration
 
@@ -100,6 +114,11 @@ Create `.mcp/mcp-servers.json`:
       "command": "python",
       "args": ["${workspaceFolder}/servers/sports.py"],
       "description": "Get live scores, standings, schedules for NFL, NBA, MLB, NHL, Soccer, F1"
+    },
+    "stocks": {
+      "command": "python",
+      "args": ["${workspaceFolder}/servers/stocks.py"],
+      "description": "Get real-time stock quotes, historical prices, and crypto data"
     }
   }
 }
@@ -116,3 +135,4 @@ uv run python generate_api_docs.py
 |--------|-----|-------|
 | weather | [Open-Meteo](https://open-meteo.com/) | Free weather data |
 | sports | ESPN | Live scores, standings, schedules |
+| stocks | [Yahoo Finance](https://finance.yahoo.com/) | Free stock/crypto data, no API key required |

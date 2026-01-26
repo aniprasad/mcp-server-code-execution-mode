@@ -32,7 +32,7 @@ from mcp.types import TextContent, Tool
 
 # Import schemas for output documentation
 try:
-    from schemas import GameInfo, StandingEntry, NewsArticle, schema_to_description
+    from schemas import GameInfo, StandingEntry, NewsArticle, SportInfo, schema_to_description
     HAS_SCHEMAS = True
 except ImportError:
     HAS_SCHEMAS = False
@@ -272,7 +272,11 @@ Output: {{team, sport, games_count, games: [GameInfo]}}
         ),
         Tool(
             name="list_sports",
-            description="List all available sports and league codes.",
+            description=f"""List all available sports and league codes.
+
+Output: {{sports: {{category: [SportInfo]}}}}
+
+{schema_to_description(SportInfo) if HAS_SCHEMAS else ''}""",
             inputSchema={
                 "type": "object",
                 "properties": {},

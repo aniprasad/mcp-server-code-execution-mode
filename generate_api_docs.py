@@ -37,33 +37,71 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _extract_output_schema_compact(description: str) -> str:
+def _extract_output_schema_compact(description: str, tool_name: str = "") -> str:
     """Extract output schema from description and format compactly."""
-    # The description often contains "Fields:" sections - extract field names
-    if "Fields:" not in description:
+    lines = description.split("\n")
+    
+    # First, check for explicit "Returns:" line in description (preferred)
+    returns_line = ""
+    for line in lines:
+        line_stripped = line.strip()
+        if line_stripped.startswith("Returns:"):
+            # Extract the schema from "Returns: {field1, field2, ...}"
+            returns_line = line_stripped[len("Returns:"):].strip()
+            break
+    
+    if not returns_line:
+        # Fall back to extracting from "Fields:" sections
+        if "Fields:" not in description:
+            return ""
+        
+        fields = []
+        in_fields = False
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Fields:"):
+                in_fields = True
+                continue
+            if in_fields:
+                if line.startswith("- "):
+                    match = line[2:].split(" ")[0].strip()
+                    if match:
+                        fields.append(match)
+                elif line.startswith("Each ") or line == "" or not line.startswith("-"):
+                    if fields:
+                        break
+        
+        if fields:
+            return "{" + ", ".join(fields) + "}"
         return ""
     
-    fields = []
-    in_fields = False
-    for line in description.split("\n"):
-        line = line.strip()
-        if line.startswith("Fields:"):
-            in_fields = True
-            continue
-        if in_fields:
-            if line.startswith("- "):
-                # Extract field name from "- field_name (type): description"
-                match = line[2:].split(" ")[0].strip()
-                if match:
-                    fields.append(match)
-            elif line.startswith("Each ") or line == "" or not line.startswith("-"):
-                # Stop at nested schemas or empty lines
-                if fields:
-                    break
+    # Check if there's a nested "Each entry" section and expand [...] to show item fields
+    if "[...]" in returns_line or "prices:" in returns_line or "results:" in returns_line:
+        # Look for "Each entry in X array:" followed by Fields:
+        for i, line in enumerate(lines):
+            if line.strip().startswith("Each ") and "array" in line.lower():
+                # Find the Fields: section after this
+                for j in range(i + 1, min(i + 20, len(lines))):
+                    if "Fields:" in lines[j]:
+                        # Extract field names from the Fields section
+                        item_fields = []
+                        for k in range(j + 1, min(j + 15, len(lines))):
+                            field_line = lines[k].strip()
+                            if field_line.startswith("- "):
+                                field_name = field_line[2:].split(" ")[0].strip()
+                                if field_name:
+                                    item_fields.append(field_name)
+                            elif field_line == "" or (not field_line.startswith("-") and not field_line.startswith(" ")):
+                                break
+                        
+                        if item_fields:
+                            # Replace [...] with actual field list
+                            item_schema = "{" + ", ".join(item_fields) + "}"
+                            returns_line = returns_line.replace("[...]", f"[{item_schema}, ...]")
+                        break
+                break
     
-    if fields:
-        return "{" + ", ".join(fields) + "}"
-    return ""
+    return returns_line
 
 
 def _generate_sandbox_helpers_markdown() -> str:
@@ -150,8 +188,230 @@ def _generate_sandbox_helpers_markdown() -> str:
     return "\n".join(lines)
 
 
-def generate_api_markdown(servers_data: Dict[str, Any]) -> str:
-    """Generate compact, LLM-friendly API documentation for MCP servers only."""
+def generate_api_markdown(servers_data: Dict[str, Any], docs_prefix: str = ".mcp/docs") -> str:
+    """Generate API index with server links and critical mistakes."""
+    lines = [
+        "# MCP Servers API Reference",
+        "",
+        "## Servers",
+        "",
+    ]
+    
+    # Build server index with absolute paths
+    for server_name, server_info in servers_data.items():
+        description = server_info.get("description", "")
+        first_sentence = description.split(".")[0] if description else server_name
+        lines.append(f"- [{server_name}]({docs_prefix}/{server_name}.md): {first_sentence}")
+    
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## Critical Mistakes",
+        "",
+        "### 1. Use keyword arguments ONLY",
+        "```python",
+        "# ✅ CORRECT",
+        "await mcp_weather.get_forecast(city='Toronto', days=5)",
+        "",
+        "# ❌ WRONG - positional args break the proxy",
+        "await mcp_weather.get_forecast('Toronto', 5)",
+        "```",
+        "",
+        "### 2. Use `await main()` not `asyncio.run()`",
+        "```python",
+        "# ✅ CORRECT - sandbox has running event loop",
+        "async def main():",
+        "    result = await mcp_weather.get_weather(city='Seattle')",
+        "    print(result)",
+        "",
+        "await main()",
+        "",
+        "# ❌ WRONG - nested event loop error",
+        "asyncio.run(main())",
+        "```",
+        "",
+        "### 3. Always print results",
+        "```python",
+        "# ✅ CORRECT - user sees output",
+        "result = await mcp_weather.get_weather(city='Seattle')",
+        "print(result)",
+        "",
+        "# ❌ WRONG - no output shown",
+        "result = await mcp_weather.get_weather(city='Seattle')",
+        "```",
+        "",
+        "### 4. Load servers you use",
+        "```python",
+        "# servers=['weather'] creates mcp_weather proxy",
+        "# servers=['stocks'] creates mcp_stocks proxy",
+        "```",
+        "",
+        "### 5. Match parameter names exactly",
+        "```python",
+        "# ✅ CORRECT - parameter is 'city'",
+        "await mcp_weather.get_weather(city='Seattle')",
+        "",
+        "# ❌ WRONG - 'location' is not valid",
+        "await mcp_weather.get_weather(location='Seattle')",
+        "```",
+    ])
+    
+    return "\n".join(lines)
+
+
+def generate_server_markdown(server_name: str, server_info: Dict[str, Any]) -> str:
+    """Generate per-server API documentation with numbered tools."""
+    description = server_info.get("description", "")
+    tools = server_info.get("tools", [])
+    error = server_info.get("error")
+    
+    lines = [
+        f"# {server_name}",
+        "",
+        description.split(".")[0] if description else "",
+        f"Load: servers=['{server_name}'] → mcp_{server_name}",
+        "",
+        "---",
+        "",
+    ]
+    
+    if error:
+        lines.append(f"Error: {error}")
+        return "\n".join(lines)
+    
+    for idx, tool in enumerate(tools, 1):
+        tool_name = tool.get("name", "unknown")
+        tool_desc = tool.get("description", "")
+        input_schema = tool.get("inputSchema", {})
+        properties = input_schema.get("properties", {})
+        required = input_schema.get("required", [])
+        
+        # Build signature
+        params = []
+        for param_name, param_info in properties.items():
+            is_required = param_name in required
+            default = param_info.get("default")
+            if is_required:
+                params.append(param_name)
+            elif default is not None:
+                params.append(f"{param_name}={default}")
+            else:
+                params.append(f"{param_name}=")
+        signature = ", ".join(params)
+        
+        # First line of description
+        first_line = tool_desc.split("\n")[0].strip() if tool_desc else ""
+        
+        # Numbered tool with signature
+        lines.append(f"{idx}. {tool_name}({signature})")
+        if first_line:
+            lines.append(f"   {first_line}")
+        
+        # Input params as bullets
+        if properties:
+            for param_name, param_info in properties.items():
+                is_required = param_name in required
+                param_desc = param_info.get("description", "")
+                req = "req" if is_required else "opt"
+                lines.append(f"   - {param_name} ({req}): {param_desc}")
+        
+        # Output schema as bullet with bold Returns
+        output_schema = _extract_output_schema_compact(tool_desc, tool_name)
+        if output_schema:
+            lines.append(f"   - **Returns**: {output_schema}")
+        
+        lines.append("")
+    
+    return "\n".join(lines)
+
+
+def generate_agent_instructions(servers_data: Dict[str, Any], docs_prefix: str = ".mcp/docs") -> str:
+    """Generate agent instructions file with dynamic server list."""
+    
+    # Build server list for display
+    server_names = list(servers_data.keys())
+    servers_str = ", ".join(server_names)
+    servers_array = ", ".join(f"'{s}'" for s in server_names)
+    
+    return f'''---
+name: Python Sandbox
+description: Execute Python code in a secure Podman container with access to MCP servers for {servers_str}, and more.
+model: GPT-5.2-Codex (copilot)
+tools:
+    - "read/readFile"
+    - "search/fileSearch"
+    - "search/listDirectory"
+    - "search/textSearch"
+    - "python-sandbox/run_python"
+---
+
+You answer questions by writing Python code and executing it via `run_python`. The sandbox runs in a Podman container. Write code when possible—the user expects YOU to take action and do work for them.
+
+**Tool usage:**
+
+- Use **VS Code file tools** (`readFile`, `fileSearch`, `listDirectory`, `textSearch`) to read files in the workspace.
+- Use **`run_python`** to execute Python code—either plain Python or code that calls MCP server APIs.
+
+## Plain Python
+
+For tasks that don't need external data (math, string manipulation, algorithms), just run plain Python:
+
+```python
+# No servers needed - just omit the servers parameter
+print(sum(range(1, 11)))  # Sum of first 10 numbers
+```
+
+## MCP Server APIs (for external data)
+
+The sandbox provides MCP server proxies as globals (e.g., `mcp_weather`, `mcp_stocks`). For the full API reference with tool signatures and common mistakes, use `readFile` to read `{docs_prefix}/API.md`.
+
+Additional docs (use `readFile` to read them when relevant):
+- `{docs_prefix}/sandbox-helpers.md` — Built-in functions (render_chart, memory, save_file)
+- `{docs_prefix}/viz-guidelines.md` — Chart styling (when creating visualizations)
+
+## run_python Tool
+
+- `code` (required): Python code to execute
+- `servers` (optional): MCP servers to load, e.g., `[{servers_array}]`. Omit for plain Python.
+- `timeout` (optional): Seconds (default 120)
+
+## Core Rules
+
+- **Keyword arguments only** — `await mcp_weather.get_weather(city='Seattle')` NOT `get_weather('Seattle')`
+- **Async/await** — Use `await` for every MCP call: `await mcp_<server>.<tool>(...)`
+- **Print results** — Always `print()` results so user sees output.
+- **No invented values** — All data must come from the user query or API results.
+- **Use `render_chart()` for ALL charts** — Never use matplotlib/plt directly.
+
+## Workflow (Per Request)
+
+1. **Identify the task** — Understand user intent.
+2. **Plain Python or MCP?** — If external data needed, check `{docs_prefix}/API.md` (via `readFile`) for relevant server tools.
+3. **Verify signatures** — Read the per-server docs (e.g., `{docs_prefix}/weather.md`) for parameter details.
+4. **Write code** — Use async pattern for MCP calls, plain Python otherwise.
+5. **Execute** — Call `run_python` with `servers` list if using MCP, omit otherwise.
+6. **Present** — Show results in friendly format.
+
+## Conventions
+
+- **Async wrapper for MCP** — Wrap MCP calls in `async def main(): ... await main()`
+- **Truncation** — Truncate verbose output unless the user asks for full details.
+- **Pagination** — If many results, show totals + top samples.
+
+```python
+# MCP example (needs servers=['weather'])
+async def main():
+    result = await mcp_weather.get_weather(city='Seattle')
+    print(result)
+
+await main()
+```
+'''
+
+
+def generate_api_markdown_full(servers_data: Dict[str, Any]) -> str:
+    """Generate full API documentation (legacy, kept for reference)."""
     lines = [
         "# MCP Servers API Reference",
         "",
@@ -270,7 +530,7 @@ def generate_api_markdown(servers_data: Dict[str, Any]) -> str:
                 lines.extend(param_parts)
             
             # Output schema - extract and format compactly
-            output_schema = _extract_output_schema_compact(tool_desc)
+            output_schema = _extract_output_schema_compact(tool_desc, tool_name)
             if output_schema:
                 lines.append(f"- **Returns**: `{output_schema}`")
             
@@ -354,12 +614,20 @@ async def generate_api_docs(output_path: Optional[Path] = None) -> Dict[str, Any
                 "error": str(e),
             }
     
-    # Generate API.md (MCP servers only)
+    # Generate API.md (index + critical mistakes)
     api_md = generate_api_markdown(servers_data)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(api_md)
     
     logger.info(f"API docs saved to {output_path}")
+    
+    # Generate per-server docs (weather.md, sports.md, stocks.md, etc.)
+    for server_name, server_info in servers_data.items():
+        server_path = output_path.parent / f"{server_name}.md"
+        server_md = generate_server_markdown(server_name, server_info)
+        with open(server_path, "w", encoding="utf-8") as f:
+            f.write(server_md)
+        logger.info(f"  → {server_name}.md saved")
     
     # Generate sandbox-helpers.md (built-in functions)
     helpers_path = output_path.parent / "sandbox-helpers.md"
@@ -368,6 +636,16 @@ async def generate_api_docs(output_path: Optional[Path] = None) -> Dict[str, Any
         f.write(helpers_md)
     
     logger.info(f"Sandbox helpers docs saved to {helpers_path}")
+    
+    # Generate agent instructions file
+    script_dir = Path(__file__).parent
+    agent_path = script_dir / ".github" / "agents" / "python-sandbox.agent.md"
+    agent_path.parent.mkdir(parents=True, exist_ok=True)
+    agent_md = generate_agent_instructions(servers_data)
+    with open(agent_path, "w", encoding="utf-8") as f:
+        f.write(agent_md)
+    
+    logger.info(f"Agent instructions saved to {agent_path}")
     
     # Print summary
     total_tools = sum(len(s.get("tools", [])) for s in servers_data.values())
@@ -378,6 +656,7 @@ async def generate_api_docs(output_path: Optional[Path] = None) -> Dict[str, Any
     print(f"Total tools: {total_tools}")
     print(f"Output: {output_path}")
     print(f"Helpers: {helpers_path}")
+    print(f"Agent: {agent_path}")
     print(f"{'=' * 60}\n")
     
     for server_name, server_info in servers_data.items():

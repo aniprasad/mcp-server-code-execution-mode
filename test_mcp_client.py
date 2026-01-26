@@ -248,6 +248,44 @@ async def test_mcp_server():
             return
         
         # ============================================================
+        # TURN 4b: Stocks query (new server)
+        # ============================================================
+        print("\n" + "=" * 60)
+        print("TURN 4b: Stocks query")
+        print("=" * 60)
+        
+        call_tool_4b = {
+            "jsonrpc": "2.0",
+            "id": 65,
+            "method": "tools/call",
+            "params": {
+                "name": "run_python",
+                "arguments": {
+                    "code": "async def main():\n    quote = await mcp_stocks.quote(symbol='AAPL')\n    print(f\"AAPL: ${quote['price']} ({quote['change_percent']:+.2f}%)\")\n\nawait main()",
+                    "servers": ["stocks"],
+                    "timeout": 60
+                }
+            }
+        }
+        print("📤 Sending run_python request (AAPL quote)...")
+        process.stdin.write((json.dumps(call_tool_4b) + "\n").encode())
+        await process.stdin.drain()
+        
+        print("⏳ Waiting for response...")
+        try:
+            response_line = await asyncio.wait_for(process.stdout.readline(), timeout=60)
+            if response_line:
+                call_response = json.loads(response_line.decode())
+                print(f"\n✅ TURN 4b RESPONSE RECEIVED!")
+                print(f"📥 Response: {json.dumps(call_response, indent=2)[:600]}...")
+            else:
+                print("\n❌ EMPTY RESPONSE")
+                return
+        except asyncio.TimeoutError:
+            print("\n❌ TIMEOUT on turn 4b")
+            return
+        
+        # ============================================================
         # TURN 5: Use both servers in one call
         # ============================================================
         print("\n" + "=" * 60)
@@ -366,6 +404,68 @@ await main()
                 print("\n❌ EMPTY RESPONSE")
         except asyncio.TimeoutError:
             print("\n❌ TIMEOUT on bonus query")
+        
+        # ============================================================
+        # BONUS 2: All three servers - weather + stocks + sports
+        # ============================================================
+        print("\n" + "=" * 60)
+        print("BONUS 2: All three servers integration")
+        print("'Get NYC weather, AAPL stock, and NBA scores'")
+        print("=" * 60)
+        
+        integrated_code = '''
+async def main():
+    print("Getting data from all 3 servers...")
+    
+    # Weather
+    weather = await mcp_weather.get_weather(city='New York')
+    print(f"NYC Weather: {weather.get('temp')}°C, {weather.get('conditions')}")
+    
+    # Stocks
+    quote = await mcp_stocks.quote(symbol='AAPL')
+    print(f"AAPL: ${quote['price']} ({quote['change_percent']:+.2f}%)")
+    
+    # Sports (use scoreboard which exists)
+    games = await mcp_sports.scoreboard(sport='nba')
+    print(f"NBA: {games.get('games_count', 0)} games today")
+    
+    print("\\n✅ All three servers working!")
+
+await main()
+'''
+        
+        call_tool_integrated = {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {
+                "name": "run_python",
+                "arguments": {
+                    "code": integrated_code.strip(),
+                    "servers": ["weather", "sports", "stocks"],
+                    "timeout": 90
+                }
+            }
+        }
+        print("📤 Sending integrated 3-server query...")
+        process.stdin.write((json.dumps(call_tool_integrated) + "\n").encode())
+        await process.stdin.drain()
+        
+        print("⏳ Waiting for response...")
+        try:
+            response_line = await asyncio.wait_for(process.stdout.readline(), timeout=90)
+            if response_line:
+                call_response = json.loads(response_line.decode())
+                print(f"\n✅ BONUS 2 RESPONSE RECEIVED!")
+                try:
+                    content = call_response.get('result', {}).get('content', [{}])[0].get('text', '')
+                    print(f"\n📊 Output:\n{content}")
+                except:
+                    print(f"📥 Response: {json.dumps(call_response, indent=2)[:1200]}...")
+            else:
+                print("\n❌ EMPTY RESPONSE")
+        except asyncio.TimeoutError:
+            print("\n❌ TIMEOUT on bonus 2 query")
         
         print("\n" + "=" * 60)
         print("🎉 ALL TESTS COMPLETED!")

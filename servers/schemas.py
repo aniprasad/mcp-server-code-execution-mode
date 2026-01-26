@@ -58,6 +58,17 @@ class ForecastInfo(BaseModel):
     days: List[ForecastDay] = Field(description="List of daily forecasts")
 
 
+class CoordinatesInfo(BaseModel):
+    """Geographic coordinates for a city."""
+    
+    city: str = Field(description="City name")
+    country: str = Field(description="Country code")
+    latitude: float = Field(description="Latitude in decimal degrees")
+    longitude: float = Field(description="Longitude in decimal degrees")
+    timezone: str = Field(description="Timezone identifier (e.g., 'America/New_York')")
+    population: Optional[int] = Field(None, description="City population if available")
+
+
 # =============================================================================
 # Sports Schemas (ESPN-based multi-sport)
 # =============================================================================
@@ -102,6 +113,49 @@ class NewsArticle(BaseModel):
     description: str = Field(description="Short description")
     published: str = Field(description="Publication date/time")
     link: str = Field(description="URL to full article")
+
+
+class SportInfo(BaseModel):
+    """Sport/league information."""
+    
+    code: str = Field(description="Sport code to use in API calls (e.g., 'nba', 'epl')")
+    name: str = Field(description="Full sport/league name (e.g., 'NBA', 'Premier League')")
+
+
+# =============================================================================
+# Stock Schemas (Yahoo Finance-based)
+# =============================================================================
+
+class StockQuote(BaseModel):
+    """Real-time stock quote information."""
+    
+    symbol: str = Field(description="Stock ticker symbol (e.g., 'AAPL')")
+    name: str = Field(description="Company name")
+    price: float = Field(description="Current price")
+    change: float = Field(description="Price change from previous close")
+    change_percent: float = Field(description="Percentage change from previous close")
+    currency: str = Field(description="Currency code (e.g., 'USD')")
+    exchange: str = Field(description="Exchange name")
+    market_state: str = Field(description="Market state: PRE, REGULAR, POST, CLOSED")
+    volume: int = Field(description="Trading volume")
+    volume_formatted: str = Field(description="Volume with K/M/B suffix")
+    day_high: Optional[float] = Field(None, description="Day's high price")
+    day_low: Optional[float] = Field(None, description="Day's low price")
+    year_high: Optional[float] = Field(None, description="52-week high")
+    year_low: Optional[float] = Field(None, description="52-week low")
+    market_cap: Optional[float] = Field(None, description="Market capitalization")
+    market_cap_formatted: Optional[str] = Field(None, description="Market cap with B/T suffix")
+
+
+class HistoricalPrice(BaseModel):
+    """Historical OHLCV price data point."""
+    
+    date: str = Field(description="Date/time of the data point")
+    open: Optional[float] = Field(None, description="Opening price")
+    high: Optional[float] = Field(None, description="High price")
+    low: Optional[float] = Field(None, description="Low price")
+    close: Optional[float] = Field(None, description="Closing price")
+    volume: int = Field(description="Trading volume")
 
 
 # =============================================================================
@@ -150,9 +204,13 @@ def get_all_schemas() -> dict:
         WeatherInfo,
         ForecastInfo,
         ForecastDay,
+        CoordinatesInfo,
         GameInfo,
         StandingEntry,
         NewsArticle,
+        SportInfo,
+        StockQuote,
+        HistoricalPrice,
     ]
     return {
         model.__name__: {
