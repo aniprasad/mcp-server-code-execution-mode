@@ -19,6 +19,11 @@
       "command": "python",
       "args": ["${workspaceFolder}/servers/fx.py"],
       "description": "Convert currencies and get exchange rates (EUR, USD, GBP, JPY, and 30+ currencies)"
+    },
+    "wikipedia": {
+      "command": "python",
+      "args": ["${workspaceFolder}/servers/wikipedia.py"],
+      "description": "Search Wikipedia and get article summaries, historical events, and random articles"
     }
   }
 }

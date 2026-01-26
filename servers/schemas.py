@@ -199,6 +199,67 @@ class RateHistory(BaseModel):
 
 
 # =============================================================================
+# Wikipedia Schemas
+# =============================================================================
+
+class ArticleSummary(BaseModel):
+    """Summary of a Wikipedia article."""
+    
+    title: str = Field(description="Article title")
+    extract: str = Field(description="Plain-text summary (first paragraph)")
+    description: str = Field(description="Short description of the topic")
+    url: str = Field(description="URL to the full article")
+    thumbnail: Optional[str] = Field(None, description="URL to article thumbnail image")
+    coordinates: Optional[dict] = Field(None, description="Geographic coordinates if applicable (lat, lon)")
+
+
+class SearchResult(BaseModel):
+    """A single Wikipedia search result."""
+    
+    title: str = Field(description="Article title")
+    description: str = Field(description="Short description or snippet")
+    url: str = Field(description="URL to the article")
+
+
+class SearchResults(BaseModel):
+    """Wikipedia search results."""
+    
+    query: str = Field(description="Original search query")
+    results: List[SearchResult] = Field(description="List of matching articles")
+
+
+class OnThisDayEvent(BaseModel):
+    """A historical event that happened on a specific date."""
+    
+    year: Optional[int] = Field(None, description="Year the event occurred")
+    text: str = Field(description="Description of the event")
+    pages: List[str] = Field(description="Related Wikipedia article titles")
+
+
+class OnThisDayResponse(BaseModel):
+    """Events that happened on a specific date in history."""
+    
+    date: str = Field(description="Date in MM-DD format")
+    events: List[OnThisDayEvent] = Field(description="List of historical events")
+
+
+class TrendingArticle(BaseModel):
+    """A trending Wikipedia article."""
+    
+    rank: int = Field(description="Rank in trending list (1 = most views)")
+    title: str = Field(description="Article title")
+    views: int = Field(description="Number of page views")
+    url: str = Field(description="URL to the article")
+
+
+class TrendingResponse(BaseModel):
+    """Most-read articles on Wikipedia."""
+    
+    date: str = Field(description="Date for the trending data (YYYY-MM-DD)")
+    articles: List[TrendingArticle] = Field(description="List of trending articles")
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -255,6 +316,13 @@ def get_all_schemas() -> dict:
         ExchangeRates,
         RateHistory,
         RateHistoryEntry,
+        ArticleSummary,
+        SearchResult,
+        SearchResults,
+        OnThisDayEvent,
+        OnThisDayResponse,
+        TrendingArticle,
+        TrendingResponse,
     ]
     return {
         model.__name__: {
