@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 
 # Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent / "servers"))
 
 from mcp_server_code_execution_mode import (
     MCPBridge,
@@ -30,11 +31,193 @@ from mcp_server_code_execution_mode import (
     CONFIG_SOURCES,
 )
 
+# Import schemas for output documentation
+try:
+    from schemas import TOOL_OUTPUT_SCHEMAS, get_tool_output_schema
+    HAS_SCHEMAS = True
+except ImportError:
+    HAS_SCHEMAS = False
+    TOOL_OUTPUT_SCHEMAS = {}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def _get_output_schema_from_model(server_name: str, tool_name: str) -> str:
+    """
+    Get output schema from TOOL_OUTPUT_SCHEMAS mapping.
+    
+    Returns a compact representation like "{field1, field2, nested: [{a, b, c}]}"
+    Recursively expands nested objects and arrays up to max_depth.
+    """
+    if not HAS_SCHEMAS:
+        return ""
+    
+    model = get_tool_output_schema(server_name, tool_name)
+    if not model:
+        return ""
+    
+    # Get the JSON schema for the model
+    schema = model.model_json_schema()
+    defs = schema.get("$defs", {})
+    
+    def _resolve_ref(ref_path: str) -> dict:
+        """Resolve a $ref path to its definition."""
+        ref_name = ref_path.split("/")[-1]
+        return defs.get(ref_name, {})
+    
+    def _format_properties(props: dict, depth: int = 0, max_depth: int = 4) -> str:
+        """Recursively format properties dict into compact field list."""
+        if depth > max_depth:
+            return "..."
+        
+        fields = []
+        for field_name, field_info in props.items():
+            field_type = field_info.get("type", "")
+            
+            # Handle $ref at property level (nested object)
+            if "$ref" in field_info:
+                ref_def = _resolve_ref(field_info["$ref"])
+                nested_props = ref_def.get("properties", {})
+                if nested_props and depth < max_depth:
+                    nested = _format_properties(nested_props, depth + 1, max_depth)
+                    fields.append(f"{field_name}: {{{nested}}}")
+                else:
+                    fields.append(field_name)
+            
+            # Handle arrays
+            elif field_type == "array":
+                items = field_info.get("items", {})
+                nested_content = None
+                
+                # Handle $ref in array items
+                if "$ref" in items:
+                    ref_def = _resolve_ref(items["$ref"])
+                    nested_props = ref_def.get("properties", {})
+                    if nested_props:
+                        nested_content = _format_properties(nested_props, depth + 1, max_depth)
+                
+                # Handle inline object in array items
+                elif items.get("type") == "object":
+                    nested_props = items.get("properties", {})
+                    if nested_props:
+                        nested_content = _format_properties(nested_props, depth + 1, max_depth)
+                
+                if nested_content:
+                    fields.append(f"{field_name}: [{{{nested_content}}}]")
+                else:
+                    fields.append(field_name)
+            
+            # Handle nested objects (inline, not $ref)
+            elif field_type == "object":
+                nested_props = field_info.get("properties", {})
+                if nested_props and depth < max_depth:
+                    nested = _format_properties(nested_props, depth + 1, max_depth)
+                    fields.append(f"{field_name}: {{{nested}}}")
+                else:
+                    fields.append(field_name)
+            
+            # Simple field
+            else:
+                fields.append(field_name)
+        
+        return ", ".join(fields)
+    
+    properties = schema.get("properties", {})
+    formatted = _format_properties(properties)
+    return "{" + formatted + "}" if formatted else ""
+
+
+def _get_output_schema_detailed(server_name: str, tool_name: str, indent: str = "     ") -> List[str]:
+    """
+    Get detailed output schema with field descriptions from TOOL_OUTPUT_SCHEMAS.
+    
+    Returns a list of lines like:
+        - title (str): Form title
+        - questions (dict): Dict of question_id -> {id, title, type, ...}
+        - responses (list):
+          - id (int): Response ID
+          - answers (dict): Dict of question_id -> answer value
+    """
+    if not HAS_SCHEMAS:
+        return []
+    
+    model = get_tool_output_schema(server_name, tool_name)
+    if not model:
+        return []
+    
+    schema = model.model_json_schema()
+    defs = schema.get("$defs", {})
+    
+    def _resolve_ref(ref_path: str) -> dict:
+        """Resolve a $ref path to its definition."""
+        ref_name = ref_path.split("/")[-1]
+        return defs.get(ref_name, {})
+    
+    def _format_type(field_info: dict) -> str:
+        """Get a readable type string from field info."""
+        if "$ref" in field_info:
+            ref_def = _resolve_ref(field_info["$ref"])
+            return ref_def.get("title", "object")
+        
+        field_type = field_info.get("type", "any")
+        
+        # Handle anyOf (e.g., Optional types)
+        if "anyOf" in field_info:
+            types = [t.get("type", "") for t in field_info["anyOf"] if t.get("type") != "null"]
+            if types:
+                field_type = types[0]
+        
+        return field_type
+    
+    def _format_properties_detailed(props: dict, base_indent: str, depth: int = 0, max_depth: int = 2) -> List[str]:
+        """Recursively format properties with descriptions."""
+        lines = []
+        
+        for field_name, field_info in props.items():
+            field_type = _format_type(field_info)
+            description = field_info.get("description", "")
+            
+            # Handle arrays with nested objects
+            if field_type == "array":
+                items = field_info.get("items", {})
+                nested_props = None
+                
+                if "$ref" in items:
+                    ref_def = _resolve_ref(items["$ref"])
+                    nested_props = ref_def.get("properties", {})
+                elif items.get("type") == "object":
+                    nested_props = items.get("properties", {})
+                
+                if nested_props and depth < max_depth:
+                    lines.append(f"{base_indent}- {field_name} (list): {description}")
+                    nested_lines = _format_properties_detailed(nested_props, base_indent + "  ", depth + 1, max_depth)
+                    lines.extend(nested_lines)
+                else:
+                    lines.append(f"{base_indent}- {field_name} (list): {description}")
+            
+            # Handle nested objects with $ref
+            elif "$ref" in field_info:
+                ref_def = _resolve_ref(field_info["$ref"])
+                nested_props = ref_def.get("properties", {})
+                if nested_props and depth < max_depth:
+                    lines.append(f"{base_indent}- {field_name} (object): {description}")
+                    nested_lines = _format_properties_detailed(nested_props, base_indent + "  ", depth + 1, max_depth)
+                    lines.extend(nested_lines)
+                else:
+                    lines.append(f"{base_indent}- {field_name} (object): {description}")
+            
+            # Simple field
+            else:
+                lines.append(f"{base_indent}- {field_name} ({field_type}): {description}")
+        
+        return lines
+    
+    properties = schema.get("properties", {})
+    return _format_properties_detailed(properties, indent)
 
 
 def _extract_output_schema_compact(description: str, tool_name: str = "") -> str:
@@ -102,6 +285,92 @@ def _extract_output_schema_compact(description: str, tool_name: str = "") -> str
                 break
     
     return returns_line
+
+
+def _extract_output_schema_full(description: str) -> str:
+    """
+    Extract the full output schema section from a tool description.
+    
+    This includes:
+    - "Returns:" line with compact schema
+    - "Output Schema:" section header  
+    - Model docstring (one line after Output Schema)
+    - "Fields:" sections with field definitions
+    - "Each X in Y:" sections for nested schemas
+    
+    Stops at "Example:", usage tips, or clearly non-schema content.
+    """
+    lines = description.split("\n")
+    
+    # Find start of output documentation
+    start_idx = -1
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("Returns:") or stripped.startswith("Output Schema"):
+            start_idx = i
+            break
+    
+    if start_idx == -1:
+        return ""
+    
+    # Extract schema lines, stopping at non-schema content
+    schema_lines = []
+    
+    for i in range(start_idx, len(lines)):
+        stripped = lines[i].strip()
+        
+        # Definite stop conditions
+        if stripped.startswith("Example:"):
+            break
+        if stripped.startswith("Available "):  # "Available periods: ..."
+            break
+        if stripped.startswith("Supported:"):  # "Supported: bitcoin, ethereum..."
+            break
+        
+        # Detect usage tips / prose (these patterns indicate non-schema content)
+        prose_indicators = [
+            "Great for",
+            "Use '",
+            "Use the",
+            "Shows what",
+            "Returns up to",
+            "The '",
+        ]
+        if any(stripped.startswith(p) for p in prose_indicators):
+            break
+        
+        # Include schema content
+        is_schema_content = (
+            stripped.startswith("Returns:") or
+            stripped.startswith("Output Schema") or
+            stripped.startswith("Fields:") or
+            stripped.startswith("Each ") or
+            stripped.startswith("- ") or  # Field definition
+            stripped == ""  # Blank line
+        )
+        
+        # Also include model docstrings (line right after "Output Schema:")
+        # These are short descriptions like "Complete form data including..."
+        if not is_schema_content and stripped:
+            # Check if previous non-empty line was Output Schema or model docstring
+            prev_was_schema_header = False
+            for j in range(i - 1, max(start_idx - 1, -1), -1):
+                prev = lines[j].strip()
+                if prev:
+                    prev_was_schema_header = (
+                        prev.startswith("Output Schema") or
+                        prev.startswith("Each ")
+                    )
+                    break
+            
+            if prev_was_schema_header:
+                # This is a model docstring, include it
+                is_schema_content = True
+        
+        if is_schema_content and stripped:
+            schema_lines.append(lines[i].rstrip())
+    
+    return "\n".join(schema_lines).strip()
 
 
 def _generate_sandbox_helpers_markdown() -> str:
@@ -232,6 +501,8 @@ def generate_api_markdown(servers_data: Dict[str, Any], docs_prefix: str = ".mcp
         "",
         "## Servers",
         "",
+        "Use `readFile` on any of the following to get more specific information:",
+        "",
     ]
     
     # Build server index with relative links (same folder as API.md)
@@ -293,13 +564,25 @@ def generate_api_markdown(servers_data: Dict[str, Any], docs_prefix: str = ".mcp
         "# ❌ WRONG - 'location' is not valid",
         "await mcp_weather.get_weather(location='Seattle')",
         "```",
+        "",
     ])
     
     return "\n".join(lines)
 
 
 def generate_server_markdown(server_name: str, server_info: Dict[str, Any]) -> str:
-    """Generate per-server API documentation with numbered tools."""
+    """
+    Generate per-server API documentation with consistent format.
+    
+    Format for each tool:
+        1. tool_name(params)
+           Description (first line only)
+           Input:
+             - param1 (type): description
+             - param2 (type, optional): description
+           Output:
+             - {field1, field2, nested: [{...}]}
+    """
     description = server_info.get("description", "")
     tools = server_info.get("tools", [])
     error = server_info.get("error")
@@ -338,26 +621,35 @@ def generate_server_markdown(server_name: str, server_info: Dict[str, Any]) -> s
                 params.append(f"{param_name}=")
         signature = ", ".join(params)
         
-        # First line of description
+        # First line of description only
         first_line = tool_desc.split("\n")[0].strip() if tool_desc else ""
         
-        # Numbered tool with signature
+        # Tool header
         lines.append(f"{idx}. {tool_name}({signature})")
         if first_line:
             lines.append(f"   {first_line}")
         
-        # Input params as bullets
+        # Input section (from inputSchema)
         if properties:
+            lines.append("   Input:")
             for param_name, param_info in properties.items():
                 is_required = param_name in required
+                param_type = param_info.get("type", "any")
                 param_desc = param_info.get("description", "")
-                req = "req" if is_required else "opt"
-                lines.append(f"   - {param_name} ({req}): {param_desc}")
+                default = param_info.get("default")
+                
+                if is_required:
+                    lines.append(f"     - {param_name} ({param_type}): {param_desc}")
+                elif default is not None:
+                    lines.append(f"     - {param_name} ({param_type}, default={default}): {param_desc}")
+                else:
+                    lines.append(f"     - {param_name} ({param_type}, optional): {param_desc}")
         
-        # Output schema as bullet with bold Returns
-        output_schema = _extract_output_schema_compact(tool_desc, tool_name)
-        if output_schema:
-            lines.append(f"   - **Returns**: {output_schema}")
+        # Output section (from TOOL_OUTPUT_SCHEMAS mapping - detailed with descriptions)
+        output_lines = _get_output_schema_detailed(server_name, tool_name)
+        if output_lines:
+            lines.append("   Output:")
+            lines.extend(output_lines)
         
         lines.append("")
     
@@ -412,7 +704,7 @@ Additional docs (use `readFile` to read them when relevant):
 
 - `code` (required): Python code to execute
 - `servers` (optional): MCP servers to load, e.g., `[{servers_array}]`. Omit for plain Python.
-- `timeout` (optional): Seconds (default 120)
+- `timeout` (optional): Seconds (default: 120)
 
 ## Core Rules
 
@@ -427,9 +719,10 @@ Additional docs (use `readFile` to read them when relevant):
 1. **Identify the task** — Understand user intent.
 2. **Plain Python or MCP?** — If external data needed, check `{docs_prefix}/API.md` (via `readFile`) for relevant server tools.
 3. **Verify signatures** — Read the per-server docs (e.g., `{docs_prefix}/weather.md`) for parameter details.
-4. **Write code** — Use async pattern for MCP calls, plain Python otherwise.
-5. **Execute** — Call `run_python` with `servers` list if using MCP, omit otherwise.
-6. **Present** — Show results in friendly format.
+4. **Check for templates** — Use `listDirectory` on `.mcp/templates` to see available templates, then `readFile` any relevant ones.
+5. **Write code** — Use async pattern for MCP calls, plain Python otherwise.
+6. **Execute** — Call `run_python` with `servers` list if using MCP, omit otherwise.
+7. **Present** — Show results in friendly format.
 
 ## Conventions
 

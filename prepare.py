@@ -286,6 +286,30 @@ render_chart(data, 'line', x='date', y='value', series='category')
         print(f"✓ Created: {viz_file}")
 
 
+def copy_templates(mcps_dir: Path, verbose: bool = True) -> None:
+    """Copy code templates from servers/templates/ to .mcp/templates/."""
+    source_dir = Path(__file__).parent / "servers" / "templates"
+    target_dir = mcps_dir / "templates"
+    
+    if not source_dir.exists():
+        if verbose:
+            print(f"⏭ No templates found in {source_dir}")
+        return
+    
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    copied = 0
+    for template_file in source_dir.glob("*.md"):
+        target_file = target_dir / template_file.name
+        shutil.copy2(template_file, target_file)
+        copied += 1
+        if verbose:
+            print(f"✓ Copied: {target_file}")
+    
+    if verbose and copied > 0:
+        print(f"  ({copied} template(s) copied to {target_dir})")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Prepare the MCP Server Code Execution Mode environment"
@@ -359,6 +383,11 @@ def main():
     if verbose:
         print("\n📊 Generating visualization guidelines...")
     generate_viz_guidelines(mcps_dir, verbose=verbose)
+    
+    # Step 5: Copy code templates
+    if verbose:
+        print("\n📝 Copying code templates...")
+    copy_templates(mcps_dir, verbose=verbose)
     
     if verbose:
         print(f"\n✅ Setup complete!")

@@ -24,6 +24,18 @@
       "command": "python",
       "args": ["${workspaceFolder}/servers/wikipedia.py"],
       "description": "Search Wikipedia and get article summaries, historical events, and random articles"
+    },
+    "msforms": {
+      "command": "python",
+      "args": ["${workspaceFolder}/servers/msforms.py"],
+      "description": "Fetch Microsoft Forms data (questions, responses, aggregated stats) for analysis with pandas. Owner auto-detected from form ID.",
+      "env": {
+        "MS_FORMS_TENANT": "YOUR_MS_TENANT_ID",
+        "MS_FORMS_USER": "YOUR_MS_FORMS_USER_ID",
+        "MS_FORMS_TOKEN": "YOUR_MS_FORMS_TOKEN",
+        "MS_FORMS_BEARER": "YOUR_MS_FORMS_BEARER",
+        "MS_FORMS_COOKIES": "YOUR_MS_FORMS_COOKIES"
+      }
     }
   }
 }

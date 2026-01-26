@@ -158,6 +158,45 @@ class HistoricalPrice(BaseModel):
     volume: int = Field(description="Trading volume")
 
 
+class MarketIndex(BaseModel):
+    """A single market index quote."""
+    
+    symbol: str = Field(description="Index symbol (e.g., '^GSPC' for S&P 500)")
+    name: str = Field(description="Index name (e.g., 'S&P 500')")
+    price: float = Field(description="Current index value")
+    change: float = Field(description="Change from previous close")
+    change_percent: float = Field(description="Percentage change")
+
+
+class MarketSummary(BaseModel):
+    """Summary of major market indices."""
+    
+    timestamp: str = Field(description="ISO timestamp of the data")
+    indices_count: int = Field(description="Number of indices returned")
+    indices: List[MarketIndex] = Field(description="List of market index quotes")
+
+
+class StockSearchResult(BaseModel):
+    """A single stock search result."""
+    
+    symbol: str = Field(description="Stock ticker symbol")
+    name: str = Field(description="Company/security name")
+    type: str = Field(description="Security type (e.g., 'S' for stock, 'E' for ETF)")
+    exchange: str = Field(description="Exchange code")
+
+
+class StockHistory(BaseModel):
+    """Historical price data for a stock."""
+    
+    symbol: str = Field(description="Stock ticker symbol")
+    name: str = Field(description="Company name")
+    currency: str = Field(description="Currency code")
+    period: str = Field(description="Time period requested")
+    interval: str = Field(description="Data interval (e.g., '1d', '1h')")
+    prices_count: int = Field(description="Number of price points")
+    prices: List[HistoricalPrice] = Field(description="List of OHLCV price points")
+
+
 # =============================================================================
 # FX/Currency Schemas (Frankfurter API)
 # =============================================================================
@@ -260,6 +299,61 @@ class TrendingResponse(BaseModel):
 
 
 # =============================================================================
+# Microsoft Forms Schemas
+# =============================================================================
+
+class FormQuestion(BaseModel):
+    """A question in a Microsoft Form."""
+    
+    id: str = Field(description="Question ID - format: 'r' + 32 hex chars (e.g., 'r624132511dcd4fe080e7eee074e01fad')")
+    title: str = Field(description="Question text")
+    type: str = Field(description="Question type: 'choice', 'rating', or 'text'")
+    required: bool = Field(description="Whether the question is required")
+    choices: Optional[List[str]] = Field(None, description="Available choices (for choice questions only)")
+    ratingScale: Optional[int] = Field(None, description="Max rating value, e.g., 5 means scale 1-5 (for rating questions only)")
+
+
+class FormSummaryQuestion(BaseModel):
+    """Aggregated summary statistics for a single question."""
+    
+    questionId: str = Field(description="Question ID - same format as FormQuestion.id, use to join with questions dict")
+    type: str = Field(description="Question type: 'choice', 'rating', or 'text'")
+    average: Optional[float] = Field(None, description="Average rating value (for rating questions only)")
+    count: Optional[int] = Field(None, description="Number of responses to this question")
+    distribution: Optional[dict] = Field(None, description="Response counts - for choice: {'Yes': 42, 'No': 8}, for rating: {'1': 5, '2': 10, '5': 85}")
+    recentValues: Optional[List[str]] = Field(None, description="Sample text responses (for text questions only)")
+
+
+class FormResponse(BaseModel):
+    """A single response to a Microsoft Form."""
+    
+    id: int = Field(description="Response ID - sequential integer, unique per form")
+    submitDate: str = Field(description="Submission timestamp in ISO 8601 format with timezone (e.g., '2025-01-13T22:54:45.499Z')")
+    responder: str = Field(description="'anonymous' if form has anonymous setting, otherwise responder's email")
+    answers: dict = Field(description="Dict of question_id -> answer. Values: str (choice/text), int (rating 1-N), list[str] (multi-select)")
+
+
+class FormSummaryResult(BaseModel):
+    """Summary statistics for a Microsoft Form (from get_form_summary). Fast - no individual responses."""
+    
+    title: str = Field(description="Form title")
+    responseCount: int = Field(description="Total number of responses")
+    avgSubmitTimeSeconds: Optional[float] = Field(None, description="Average time to complete form in seconds")
+    questions: dict = Field(description="Dict of question_id -> FormSummaryQuestion. Keys are 'r' + 32 hex chars")
+
+
+class FormDataResult(BaseModel):
+    """Complete form data including structure, summary, and individual responses."""
+    
+    title: str = Field(description="Form title")
+    description: str = Field(description="Form description")
+    responseCount: int = Field(description="Total number of responses")
+    questions: dict = Field(description="Dict of question_id -> FormQuestion. Keys are 'r' + 32 hex chars")
+    summary: dict = Field(description="Dict of question_id -> FormSummaryQuestion. Same keys as questions dict")
+    responses: List[FormResponse] = Field(description="Individual responses, ordered by id (sequential). Use answers[question_id] to get values")
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -312,6 +406,10 @@ def get_all_schemas() -> dict:
         SportInfo,
         StockQuote,
         HistoricalPrice,
+        MarketIndex,
+        MarketSummary,
+        StockSearchResult,
+        StockHistory,
         ConversionResult,
         ExchangeRates,
         RateHistory,
@@ -323,6 +421,12 @@ def get_all_schemas() -> dict:
         OnThisDayResponse,
         TrendingArticle,
         TrendingResponse,
+        # Microsoft Forms
+        FormQuestion,
+        FormSummaryQuestion,
+        FormResponse,
+        FormSummaryResult,
+        FormDataResult,
     ]
     return {
         model.__name__: {
@@ -331,3 +435,65 @@ def get_all_schemas() -> dict:
         }
         for model in models
     }
+
+
+# =============================================================================
+# Tool-to-Schema Mapping
+# =============================================================================
+
+# Maps "server.tool_name" -> Pydantic model for doc generation
+# This enables the doc generator to extract output schemas without
+# requiring Returns: lines in tool descriptions.
+
+TOOL_OUTPUT_SCHEMAS: dict[str, type[BaseModel]] = {
+    # Weather tools
+    "weather.get_weather": WeatherInfo,
+    "weather.get_forecast": ForecastInfo,
+    "weather.get_coordinates": CoordinatesInfo,
+    
+    # Sports tools (tool names as registered in MCP)
+    "sports.scoreboard": GameInfo,  # Returns list of GameInfo
+    "sports.standings": StandingEntry,  # Returns list of StandingEntry
+    "sports.team_schedule": GameInfo,  # Returns list of GameInfo
+    "sports.list_sports": SportInfo,  # Returns list of SportInfo
+    "sports.news": NewsArticle,  # Returns list of NewsArticle
+    
+    # Stocks tools (tool names as registered in MCP)
+    "stocks.quote": StockQuote,
+    "stocks.history": StockHistory,
+    "stocks.search": StockSearchResult,  # Returns list
+    "stocks.market_summary": MarketSummary,
+    "stocks.crypto": StockQuote,
+    
+    # FX tools
+    "fx.convert": ConversionResult,
+    "fx.rates": ExchangeRates,
+    "fx.history": RateHistory,
+    
+    # Wikipedia tools
+    "wikipedia.summary": ArticleSummary,
+    "wikipedia.search": SearchResults,
+    "wikipedia.on_this_day": OnThisDayResponse,
+    "wikipedia.random": ArticleSummary,
+    "wikipedia.trending": TrendingResponse,
+    "wikipedia.featured": ArticleSummary,
+    
+    # Microsoft Forms tools
+    "msforms.get_form_data": FormDataResult,
+    "msforms.get_form_summary": FormSummaryResult,
+}
+
+
+def get_tool_output_schema(server_name: str, tool_name: str) -> Optional[type[BaseModel]]:
+    """
+    Get the output schema model for a tool.
+    
+    Args:
+        server_name: Server name (e.g., 'weather', 'stocks')
+        tool_name: Tool name (e.g., 'get_weather', 'get_quote')
+    
+    Returns:
+        The Pydantic model class, or None if not found.
+    """
+    key = f"{server_name}.{tool_name}"
+    return TOOL_OUTPUT_SCHEMAS.get(key)
