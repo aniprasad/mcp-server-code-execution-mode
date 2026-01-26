@@ -1446,6 +1446,70 @@ class RootlessContainerSandbox:
                     print(url)  # Auto-print so image shows in chat
                     return url
 
+                # --- Timezone Helpers ---
+                def now(timezone: str = "UTC"):
+                    '''Get current time in a timezone.
+                    
+                    Args:
+                        timezone: IANA timezone name (e.g., "America/New_York", "Asia/Tokyo", "UTC")
+                    
+                    Returns:
+                        datetime object with timezone info
+                    
+                    Example:
+                        now()  # UTC
+                        now("America/New_York")  # New York time
+                        now("Asia/Tokyo")  # Tokyo time
+                    '''
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    return datetime.now(ZoneInfo(timezone))
+
+                def convert_time(dt, to_tz: str):
+                    '''Convert a datetime to another timezone.
+                    
+                    Args:
+                        dt: datetime object (can be naive or aware)
+                        to_tz: Target timezone name (e.g., "Europe/London")
+                    
+                    Returns:
+                        datetime in the target timezone
+                    
+                    Example:
+                        ny_time = now("America/New_York")
+                        london_time = convert_time(ny_time, "Europe/London")
+                    '''
+                    from zoneinfo import ZoneInfo
+                    if dt.tzinfo is None:
+                        # Naive datetime, assume UTC
+                        from datetime import timezone
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.astimezone(ZoneInfo(to_tz))
+
+                def list_timezones(region: str = None):
+                    '''List available IANA timezone names.
+                    
+                    Args:
+                        region: Optional filter (e.g., "America", "Europe", "Asia")
+                    
+                    Returns:
+                        Sorted list of timezone names
+                    
+                    Example:
+                        list_timezones()  # All timezones
+                        list_timezones("America")  # Americas only
+                        list_timezones("Europe")  # Europe only
+                    '''
+                    from zoneinfo import available_timezones
+                    zones = sorted(available_timezones())
+                    if region:
+                        zones = [z for z in zones if z.startswith(region)]
+                    return zones
+
+                runtime_module.now = now
+                runtime_module.convert_time = convert_time
+                runtime_module.list_timezones = list_timezones
+
                 runtime_module.execution_folder = execution_folder
                 runtime_module.save_image = save_image
                 runtime_module.save_file = save_file
@@ -1456,6 +1520,9 @@ class RootlessContainerSandbox:
                 globals()["save_file"] = save_file
                 globals()["list_execution_files"] = list_execution_files
                 globals()["render_chart"] = render_chart
+                globals()["now"] = now
+                globals()["convert_time"] = convert_time
+                globals()["list_timezones"] = list_timezones
 
                 class MCPError(RuntimeError):
                     'Raised when an MCP call fails.'
@@ -1475,10 +1542,11 @@ class RootlessContainerSandbox:
                     "   - `update_memory(key, lambda x: ...)` - Update existing memory\\n"
                     "   - `delete_memory(key)` - Remove a memory\\n"
                     "5. CHARTS: `render_chart(data, 'bar', x='field', y='value')` - Returns file:// URL. Do NOT use matplotlib directly.\\n"
-                    "6. FILES: `save_file('data.csv', content)` - Save text/bytes, returns file:// URL\\n"
-                    "7. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
+                    "6. TIMEZONE: `now('America/New_York')`, `convert_time(dt, 'Europe/London')`, `list_timezones('Asia')`.\\n"
+                    "7. FILES: `save_file('data.csv', content)` - Save text/bytes, returns file:// URL\\n"
+                    "8. HELPERS: `import mcp.runtime as runtime`. Available: list_servers(), list_tools_sync(server), "
                     "query_tool_docs(server), describe_server(name).\\n"
-                    "8. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
+                    "9. PROXIES: Loaded servers are available as `mcp_<alias>` (e.g. `await mcp_filesystem.read_file(...)`)."
                 )
 
                 _LOADED_SERVER_NAMES = tuple(server.get("name") for server in AVAILABLE_SERVERS)
@@ -1777,6 +1845,9 @@ class RootlessContainerSandbox:
             _GLOBAL_NAMESPACE["save_file"] = runtime_module.save_file
             _GLOBAL_NAMESPACE["list_execution_files"] = runtime_module.list_execution_files
             _GLOBAL_NAMESPACE["render_chart"] = runtime_module.render_chart
+            _GLOBAL_NAMESPACE["now"] = runtime_module.now
+            _GLOBAL_NAMESPACE["convert_time"] = runtime_module.convert_time
+            _GLOBAL_NAMESPACE["list_timezones"] = runtime_module.list_timezones
             
             LOADED_MCP_SERVERS = tuple(server["name"] for server in AVAILABLE_SERVERS)
             mcp_servers = {}

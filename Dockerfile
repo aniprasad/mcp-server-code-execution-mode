@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir \
     pillow \
     pandas \
     numpy \
-    seaborn
+    seaborn \
+    tzdata
 
 # Set up non-root user (matches container security settings)
 # The bridge runs with --user 65534:65534 (nobody)
