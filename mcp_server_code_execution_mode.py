@@ -905,12 +905,15 @@ class RootlessContainerSandbox:
             # Global stdin reader so we can track connection state
             _STDIN_READER = None
             _STDIN_CONNECTED = asyncio.Event() if hasattr(asyncio, 'Event') else None
+            
+            # 16MB limit for large RPC responses (e.g., MS Forms with many responses)
+            _STREAM_READER_LIMIT = 16 * 1024 * 1024
 
             async def _connect_stdin():
                 # Connect to stdin and return the reader. Must be called from asyncio.
                 global _STDIN_READER
                 loop = asyncio.get_running_loop()
-                reader = asyncio.StreamReader()
+                reader = asyncio.StreamReader(limit=_STREAM_READER_LIMIT)
                 protocol = asyncio.StreamReaderProtocol(reader)
                 await loop.connect_read_pipe(lambda: protocol, sys.stdin)
                 _STDIN_READER = reader

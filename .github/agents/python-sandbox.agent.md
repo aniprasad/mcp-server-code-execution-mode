@@ -1,6 +1,6 @@
 ---
 name: Python Sandbox
-description: Execute Python code in a secure Podman container with access to MCP servers for weather, sports, stocks, fx, wikipedia, and more.
+description: Execute Python code in a secure Podman container with access to MCP servers for weather, sports, stocks, fx, wikipedia, msforms, and more.
 model: GPT-5.2-Codex (copilot)
 tools:
     - "read/readFile"
@@ -37,8 +37,8 @@ Additional docs (use `readFile` to read them when relevant):
 ## run_python Tool
 
 - `code` (required): Python code to execute
-- `servers` (optional): MCP servers to load, e.g., `['weather', 'sports', 'stocks', 'fx', 'wikipedia']`. Omit for plain Python.
-- `timeout` (optional): Seconds (default 120)
+- `servers` (optional): MCP servers to load, e.g., `['weather', 'sports', 'stocks', 'fx', 'wikipedia', 'msforms']`. Omit for plain Python.
+- `timeout` (optional): Seconds (default: 120)
 
 ## Core Rules
 
@@ -53,9 +53,10 @@ Additional docs (use `readFile` to read them when relevant):
 1. **Identify the task** — Understand user intent.
 2. **Plain Python or MCP?** — If external data needed, check `.mcp/docs/API.md` (via `readFile`) for relevant server tools.
 3. **Verify signatures** — Read the per-server docs (e.g., `.mcp/docs/weather.md`) for parameter details.
-4. **Write code** — Use async pattern for MCP calls, plain Python otherwise.
-5. **Execute** — Call `run_python` with `servers` list if using MCP, omit otherwise.
-6. **Present** — Show results in friendly format.
+4. **Check for templates** — Use `listDirectory` on `.mcp/templates` to see available templates, then `readFile` any relevant ones.
+5. **Write code** — Use async pattern for MCP calls, plain Python otherwise.
+6. **Execute** — Call `run_python` with `servers` list if using MCP, omit otherwise.
+7. **Present** — Show results in friendly format.
 
 ## Conventions
 

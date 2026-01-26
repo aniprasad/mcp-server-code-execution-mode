@@ -24,9 +24,9 @@ from mcp.types import TextContent, Tool
 
 # Handle both direct execution and import from parent
 try:
-    from schemas import WeatherInfo, ForecastInfo, ForecastDay, CoordinatesInfo, schema_to_description
+    from schemas import WeatherInfo, ForecastInfo, ForecastDay, CoordinatesInfo
 except ImportError:
-    from .schemas import WeatherInfo, ForecastInfo, ForecastDay, CoordinatesInfo, schema_to_description
+    from .schemas import WeatherInfo, ForecastInfo, ForecastDay, CoordinatesInfo
 
 SERVER_NAME = "weather"
 
@@ -69,10 +69,7 @@ async def list_tools() -> List[Tool]:
     return [
         Tool(
             name="get_weather",
-            description=f"""Get current weather for a city.
-
-Output Schema:
-{schema_to_description(WeatherInfo)}""",
+            description="Get current weather for a city.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -86,13 +83,7 @@ Output Schema:
         ),
         Tool(
             name="get_forecast",
-            description=f"""Get weather forecast for a city.
-
-Output Schema:
-{schema_to_description(ForecastInfo)}
-
-Each day in the 'days' list:
-{schema_to_description(ForecastDay)}""",
+            description="Get weather forecast for a city.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -111,10 +102,7 @@ Each day in the 'days' list:
         ),
         Tool(
             name="get_coordinates",
-            description=f"""Get latitude/longitude for a city. Useful for location-based queries.
-
-Output Schema:
-{schema_to_description(CoordinatesInfo)}""",
+            description="Get latitude/longitude for a city. Useful for location-based queries.",
             inputSchema={
                 "type": "object",
                 "properties": {

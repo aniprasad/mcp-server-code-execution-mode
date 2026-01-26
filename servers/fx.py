@@ -25,9 +25,9 @@ from mcp.types import TextContent, Tool
 
 # Handle both direct execution and import from parent
 try:
-    from schemas import ConversionResult, ExchangeRates, RateHistory, RateHistoryEntry, schema_to_description
+    from schemas import ConversionResult, ExchangeRates, RateHistory, RateHistoryEntry
 except ImportError:
-    from .schemas import ConversionResult, ExchangeRates, RateHistory, RateHistoryEntry, schema_to_description
+    from .schemas import ConversionResult, ExchangeRates, RateHistory, RateHistoryEntry
 
 SERVER_NAME = "fx"
 FRANKFURTER_API = "https://api.frankfurter.dev/v1"
@@ -78,10 +78,7 @@ async def list_tools() -> List[Tool]:
     return [
         Tool(
             name="convert",
-            description=f"""Convert an amount from one currency to another.
-
-Output Schema:
-{schema_to_description(ConversionResult)}""",
+            description="Convert an amount from one currency to another.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -103,10 +100,7 @@ Output Schema:
         ),
         Tool(
             name="rates",
-            description=f"""Get current exchange rates for a base currency.
-
-Output Schema:
-{schema_to_description(ExchangeRates)}""",
+            description="Get current exchange rates for a base currency.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -121,11 +115,7 @@ Output Schema:
         ),
         Tool(
             name="history",
-            description=f"""Get historical exchange rates for charting. Returns daily rates.
-
-Returns: {{base, target, start_date, end_date, rates: [{{date, rate}}]}}
-
-Usage: result['rates'] gives the list of daily rate entries for DataFrame/charting.""",
+            description="Get historical exchange rates for charting.",
             inputSchema={
                 "type": "object",
                 "properties": {

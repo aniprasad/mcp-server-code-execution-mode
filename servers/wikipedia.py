@@ -79,12 +79,7 @@ async def list_tools() -> List[Tool]:
     return [
         Tool(
             name="summary",
-            description=f"""Get a summary of a Wikipedia article.
-
-Returns: {{title, extract, description, url, thumbnail, coordinates}}
-
-The 'extract' field contains a plain-text summary (first paragraph).
-Use 'thumbnail' URL to display article image if available.""",
+            description="Get a summary of a Wikipedia article.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -98,11 +93,7 @@ Use 'thumbnail' URL to display article image if available.""",
         ),
         Tool(
             name="search",
-            description=f"""Search Wikipedia for articles matching a query.
-
-Returns: {{query, results: [{{title, description, url}}]}}
-
-Returns up to 10 matching articles with titles and descriptions.""",
+            description="Search Wikipedia for articles matching a query.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -121,11 +112,7 @@ Returns up to 10 matching articles with titles and descriptions.""",
         ),
         Tool(
             name="on_this_day",
-            description=f"""Get historical events that happened on a specific date.
-
-Returns: {{date, events: [{{year, text, pages}}]}}
-
-Great for "on this day in history" content. Each event includes the year and description.""",
+            description="Get historical events that happened on a specific date.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -148,11 +135,7 @@ Great for "on this day in history" content. Each event includes the year and des
         ),
         Tool(
             name="random",
-            description=f"""Get a random Wikipedia article summary.
-
-Returns: {{title, extract, description, url, thumbnail}}
-
-Great for discovering new topics or trivia.""",
+            description="Get a random Wikipedia article summary.",
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -161,11 +144,7 @@ Great for discovering new topics or trivia.""",
         ),
         Tool(
             name="trending",
-            description=f"""Get the most-read Wikipedia articles (yesterday's top articles).
-
-Returns: {{date, articles: [{{rank, title, views, url}}]}}
-
-Shows what people are searching for - often reflects current news and events.""",
+            description="Get the most-read Wikipedia articles from yesterday.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -180,11 +159,7 @@ Shows what people are searching for - often reflects current news and events."""
         ),
         Tool(
             name="featured",
-            description=f"""Get today's featured article from Wikipedia.
-
-Returns: {{title, extract, description, url, thumbnail}}
-
-Wikipedia editors select one high-quality article to feature each day.""",
+            description="Get today's featured article from Wikipedia.",
             inputSchema={
                 "type": "object",
                 "properties": {},

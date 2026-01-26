@@ -30,13 +30,22 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-# Import schemas for output documentation
+# Import schemas for output validation
 try:
-    from schemas import StockQuote, HistoricalPrice, schema_to_description
+    from schemas import (
+        StockQuote, HistoricalPrice, MarketIndex, MarketSummary,
+        StockSearchResult, StockHistory
+    )
     HAS_SCHEMAS = True
 except ImportError:
-    HAS_SCHEMAS = False
-    def schema_to_description(model): return ""
+    try:
+        from .schemas import (
+            StockQuote, HistoricalPrice, MarketIndex, MarketSummary,
+            StockSearchResult, StockHistory
+        )
+        HAS_SCHEMAS = True
+    except ImportError:
+        HAS_SCHEMAS = False
 
 SERVER_NAME = "stocks"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
@@ -153,16 +162,10 @@ def _parse_quote(meta: Dict[str, Any], symbol: str) -> Dict[str, Any]:
 async def list_tools() -> List[Tool]:
     period_list = ", ".join(VALID_PERIODS)
     
-    # Build output schema docs
-    quote_schema = schema_to_description(StockQuote) if HAS_SCHEMAS else ""
-    history_schema = schema_to_description(HistoricalPrice) if HAS_SCHEMAS else ""
-    
     return [
         Tool(
             name="quote",
-            description=f"""Get real-time stock quote with price, change, volume, and key metrics.
-
-{quote_schema}""",
+            description="Get real-time stock quote with price, change, volume, and key metrics.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -176,14 +179,7 @@ async def list_tools() -> List[Tool]:
         ),
         Tool(
             name="history",
-            description=f"""Get historical price data (OHLCV) for a stock.
-
-Returns: {{symbol, name, currency, period, interval, prices_count, prices: [...]}}
-
-Each entry in prices array:
-{history_schema}
-
-Available periods: {period_list}""",
+            description="Get historical price data (OHLCV) for a stock.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -202,9 +198,7 @@ Available periods: {period_list}""",
         ),
         Tool(
             name="search",
-            description="""Search for stock ticker symbols by company name.
-
-Returns: {query, results_count, results: [{symbol, name, type, exchange}, ...]}""",
+            description="Search for stock ticker symbols by company name.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -218,9 +212,7 @@ Returns: {query, results_count, results: [{symbol, name, type, exchange}, ...]}"
         ),
         Tool(
             name="market_summary",
-            description="""Get current prices for major market indices (S&P 500, Dow Jones, NASDAQ, etc.).
-
-Returns: {timestamp, indices_count, indices: [{symbol, name, price, change, change_percent}, ...]}""",
+            description="Get current prices for major market indices (S&P 500, Dow Jones, NASDAQ, etc.).",
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -229,12 +221,7 @@ Returns: {timestamp, indices_count, indices: [{symbol, name, price, change, chan
         ),
         Tool(
             name="crypto",
-            description=f"""Get cryptocurrency price in USD.
-
-Supported: bitcoin/btc, ethereum/eth, dogecoin/doge, solana/sol, cardano/ada, ripple/xrp
-
-Output Schema:
-{schema_to_description(StockQuote) if HAS_SCHEMAS else ''}""",
+            description="Get cryptocurrency price in USD. Supports: bitcoin, ethereum, dogecoin, solana, cardano, ripple.",
             inputSchema={
                 "type": "object",
                 "properties": {

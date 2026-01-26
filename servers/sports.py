@@ -30,13 +30,12 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-# Import schemas for output documentation
+# Import schemas for validation
 try:
-    from schemas import GameInfo, StandingEntry, NewsArticle, SportInfo, schema_to_description
+    from schemas import GameInfo, StandingEntry, NewsArticle, SportInfo
     HAS_SCHEMAS = True
 except ImportError:
     HAS_SCHEMAS = False
-    def schema_to_description(model): return ""
 
 SERVER_NAME = "sports"
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
@@ -198,19 +197,10 @@ def _format_standing(entry: Dict[str, Any], sport_key: str) -> Dict[str, Any]:
 async def list_tools() -> List[Tool]:
     sport_list = ", ".join(SPORTS.keys())
     
-    # Build output schema docs
-    game_schema = schema_to_description(GameInfo) if HAS_SCHEMAS else ""
-    standing_schema = schema_to_description(StandingEntry) if HAS_SCHEMAS else ""
-    news_schema = schema_to_description(NewsArticle) if HAS_SCHEMAS else ""
-    
     return [
         Tool(
             name="scoreboard",
-            description=f"""Get today's games/matches with live scores.
-
-Output: {{sport, date, games_count, games: [GameInfo]}}
-
-{game_schema}""",
+            description="Get today's games/matches with live scores.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -228,11 +218,7 @@ Output: {{sport, date, games_count, games: [GameInfo]}}
         ),
         Tool(
             name="standings",
-            description=f"""Get current standings/rankings.
-
-Output: {{sport, group, teams_count, standings: [StandingEntry]}}
-
-{standing_schema}""",
+            description="Get current standings/rankings for a league.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -250,11 +236,7 @@ Output: {{sport, group, teams_count, standings: [StandingEntry]}}
         ),
         Tool(
             name="team_schedule",
-            description=f"""Get upcoming games for a specific team.
-
-Output: {{team, sport, games_count, games: [GameInfo]}}
-
-{game_schema}""",
+            description="Get upcoming games for a specific team.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -272,11 +254,7 @@ Output: {{team, sport, games_count, games: [GameInfo]}}
         ),
         Tool(
             name="list_sports",
-            description=f"""List all available sports and league codes.
-
-Output: {{sports: {{category: [SportInfo]}}}}
-
-{schema_to_description(SportInfo) if HAS_SCHEMAS else ''}""",
+            description="List all available sports and league codes.",
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -285,11 +263,7 @@ Output: {{sports: {{category: [SportInfo]}}}}
         ),
         Tool(
             name="news",
-            description=f"""Get latest sports news headlines.
-
-Output: {{sport, articles_count, articles: [NewsArticle]}}
-
-{news_schema}""",
+            description="Get latest sports news headlines.",
             inputSchema={
                 "type": "object",
                 "properties": {

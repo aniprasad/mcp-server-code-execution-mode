@@ -65,6 +65,18 @@ for game in games["games"]:
   - `market_summary()` - Major indices (S&P 500, Dow, NASDAQ, etc.)
   - `crypto(symbol)` - Cryptocurrency prices (bitcoin, ethereum, etc.)
 
+### msforms
+- **API**: Microsoft Forms (private API, requires auth)
+- **Auth**: Requires 3 env vars from browser DevTools (Network tab → any `formapi` request):
+  - `MS_FORMS_TOKEN` - the `__requestverificationtoken` header value
+  - `MS_FORMS_BEARER` - the `authorization` header value (without "Bearer " prefix)
+  - `MS_FORMS_COOKIES` - the full `cookie` header value
+- **Tools**:
+  - `get_form_data(form_id, max_responses=100)` - Full form data: questions, aggregated stats, and individual responses
+  - `get_form_summary(form_id)` - Aggregated stats only (faster)
+  - `decode_form(form_id)` - Decode form ID to extract OrgId, OwnerId, TableId
+- **Notes**: Owner ID auto-extracted from form_id. Auth tokens expire after ~1 hour.
+
 ## Output Schemas
 
 We use Pydantic models in `schemas.py` for:
@@ -97,6 +109,9 @@ class GameInfo(BaseModel):
 | `NewsArticle` | sports.news | News headline |
 | `StockQuote` | stocks.quote, stocks.crypto | Real-time stock/crypto quote |
 | `HistoricalPrice` | stocks.history | OHLCV price data point |
+| `FormQuestion` | msforms.get_form_data | Question definition with choices/rating scale |
+| `FormDataResult` | msforms.get_form_data | Complete form data with responses |
+| `FormSummaryResult` | msforms.get_form_summary | Aggregated form statistics |
 
 ## Configuration
 
