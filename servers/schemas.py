@@ -159,6 +159,46 @@ class HistoricalPrice(BaseModel):
 
 
 # =============================================================================
+# FX/Currency Schemas (Frankfurter API)
+# =============================================================================
+
+class ConversionResult(BaseModel):
+    """Currency conversion result."""
+    
+    amount: float = Field(description="Original amount to convert")
+    from_currency: str = Field(description="Source currency code (e.g., 'USD')")
+    to_currency: str = Field(description="Target currency code (e.g., 'EUR')")
+    result: float = Field(description="Converted amount")
+    rate: float = Field(description="Exchange rate used")
+    date: str = Field(description="Date of the exchange rate (YYYY-MM-DD)")
+
+
+class ExchangeRates(BaseModel):
+    """Exchange rates for a base currency."""
+    
+    base: str = Field(description="Base currency code")
+    date: str = Field(description="Date of the rates (YYYY-MM-DD)")
+    rates: dict = Field(description="Dictionary of currency codes to rates")
+
+
+class RateHistoryEntry(BaseModel):
+    """Single historical rate entry."""
+    
+    date: str = Field(description="Date (YYYY-MM-DD)")
+    rate: float = Field(description="Exchange rate on this date")
+
+
+class RateHistory(BaseModel):
+    """Historical exchange rates over time."""
+    
+    base: str = Field(description="Base currency code")
+    target: str = Field(description="Target currency code")
+    start_date: str = Field(description="Start date (YYYY-MM-DD)")
+    end_date: str = Field(description="End date (YYYY-MM-DD)")
+    rates: List[RateHistoryEntry] = Field(description="List of daily rates")
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -211,6 +251,10 @@ def get_all_schemas() -> dict:
         SportInfo,
         StockQuote,
         HistoricalPrice,
+        ConversionResult,
+        ExchangeRates,
+        RateHistory,
+        RateHistoryEntry,
     ]
     return {
         model.__name__: {

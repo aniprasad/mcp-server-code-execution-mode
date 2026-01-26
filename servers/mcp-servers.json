@@ -14,6 +14,11 @@
       "command": "python",
       "args": ["${workspaceFolder}/servers/stocks.py"],
       "description": "Get real-time stock quotes, historical prices, market indices, and cryptocurrency data"
+    },
+    "fx": {
+      "command": "python",
+      "args": ["${workspaceFolder}/servers/fx.py"],
+      "description": "Convert currencies and get exchange rates (EUR, USD, GBP, JPY, and 30+ currencies)"
     }
   }
 }

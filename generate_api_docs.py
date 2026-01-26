@@ -197,11 +197,12 @@ def generate_api_markdown(servers_data: Dict[str, Any], docs_prefix: str = ".mcp
         "",
     ]
     
-    # Build server index with absolute paths
+    # Build server index with relative links (same folder as API.md)
+    # Note: For readFile, agent should use full path like ".mcp/docs/weather.md"
     for server_name, server_info in servers_data.items():
         description = server_info.get("description", "")
         first_sentence = description.split(".")[0] if description else server_name
-        lines.append(f"- [{server_name}]({docs_prefix}/{server_name}.md): {first_sentence}")
+        lines.append(f"- [{server_name}]({server_name}.md): {first_sentence}")
     
     lines.extend([
         "",
