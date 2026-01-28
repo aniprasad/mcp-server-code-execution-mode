@@ -383,7 +383,7 @@ def _generate_sandbox_helpers_markdown() -> str:
         "---",
         "",
         "## render_chart(data, chart_type, x, y, ...)",
-        "Render a chart using seaborn. See `.mcp/docs/viz-guidelines.md` for usage rules.",
+        "Render a chart using seaborn. Use `readFile` on `.mcp/docs/viz-guidelines.md` for usage rules.",
         "- **data** (list|DataFrame, required): Data to plot",
         "- **chart_type** (str, required): `'bar'`, `'line'`, or `'scatter'`",
         "- **x** (str, required): Field name for X axis",

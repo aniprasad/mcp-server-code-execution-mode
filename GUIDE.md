@@ -96,7 +96,22 @@ pip install -r requirements.txt
 
 > **Note:** `uv sync` automatically creates a `.venv/` virtual environment and installs all dependencies from `pyproject.toml`. All `uv run` commands use this environment.
 
-#### 3. Run the Prepare Script
+#### 3. Install Server Dependencies (Optional)
+
+The bundled MCP servers (weather, sports, stocks, fx, wikipedia) work out of the box. For additional servers:
+
+**Browser automation (browser.py):**
+```bash
+# Install cesail and playwright
+uv pip install cesail playwright
+
+# Install browser binaries (Chromium)
+uv run playwright install chromium
+```
+
+**Microsoft Forms (msforms.py):** No additional install needed, but requires authentication tokens (see `servers/README.md`).
+
+#### 4. Run the Prepare Script
 
 ```bash
 uv run python prepare.py
@@ -104,10 +119,10 @@ uv run python prepare.py
 
 This script:
 - Creates `.mcp/` directory structure
-- Copies example server configs (weather, sports)
+- Copies example server configs (weather, sports, stocks, fx, wikipedia, msforms, browser)
 - Generates `.mcp/docs/API.md` API documentation
 
-#### 4. Test Installation
+#### 5. Test Installation
 
 ```bash
 uv run python mcp_server_code_execution_mode.py
@@ -116,7 +131,7 @@ uv run python mcp_server_code_execution_mode.py
 This starts the MCP server. If no errors occur, the installation is successful.
 
 
-#### 5. Register with MCP Client
+#### 6. Register with MCP Client
 
 **Claude Code & OpenCode:**
 
@@ -157,7 +172,7 @@ Add server to your client configuration:
 }
 ```
 
-#### 6. Restart MCP Client
+#### 7. Restart MCP Client
 
 Restart Claude Code or your MCP client to load the new server.
 

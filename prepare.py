@@ -4,17 +4,21 @@ Prepare the MCP Server Code Execution Mode environment.
 
 This script:
 1. Kills any stale MCP server processes
-2. Cleans up stale sandbox containers
-3. Creates .mcp/ directory structure in the workspace
-4. Copies example server configs if not present
-5. Generates API documentation (docs/sandbox-api.md)
+2. Cleans up stale sandbox containers  
+3. Cleans up stale browser processes (Playwright/Chrome headless)
+4. Creates .mcp/ directory structure in the workspace
+5. Copies example server configs if not present
+6. Generates API documentation (docs/sandbox-api.md)
 
 Usage:
-    uv run python prepare.py
+    uv run python prepare.py                    # Full prepare
+    uv run python prepare.py --cleanup-only     # Just cleanup stale processes
+    uv run python prepare.py --clear-executions # Clear saved execution artifacts
 """
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -45,7 +49,7 @@ def kill_stale_mcp_processes(verbose: bool = True) -> int:
                 killed = len(pids)
         except Exception as e:
             if verbose:
-                print(f"⚠ Failed to check for stale processes: {e}")
+                print(f"[!] Failed to check for stale processes: {e}")
     else:
         # Unix: Use pkill or pgrep
         try:
@@ -62,10 +66,10 @@ def kill_stale_mcp_processes(verbose: bool = True) -> int:
             pass  # pgrep not available
         except Exception as e:
             if verbose:
-                print(f"⚠ Failed to check for stale processes: {e}")
+                print(f"[!] Failed to check for stale processes: {e}")
     
     if killed > 0 and verbose:
-        print(f"🔪 Killed {killed} stale MCP server process(es)")
+        print(f"[x] Killed {killed} stale MCP server process(es)")
     
     return killed
 
@@ -102,12 +106,12 @@ def cleanup_stale_containers(verbose: bool = True) -> int:
             removed = len(containers)
             
             if verbose and removed > 0:
-                print(f"🧹 Cleaned up {removed} stale sandbox container(s)")
+                print(f"[~] Cleaned up {removed} stale sandbox container(s)")
             break
             
         except subprocess.TimeoutExpired:
             if verbose:
-                print(f"⚠ {runtime} cleanup timed out")
+                print(f"[!] {runtime} cleanup timed out")
             continue
         except FileNotFoundError:
             continue  # Runtime not installed
@@ -115,6 +119,54 @@ def cleanup_stale_containers(verbose: bool = True) -> int:
             continue
     
     return removed
+
+
+def cleanup_browser_processes(verbose: bool = True) -> int:
+    """Clean up stale browser processes (Playwright/Chrome headless). Returns count killed."""
+    killed = 0
+    
+    # Browser process names to clean up (from Playwright/CeSail)
+    browser_patterns = ["chrome-headless-shell", "chromium", "firefox", "webkit"]
+    
+    if sys.platform == "win32":
+        for pattern in browser_patterns:
+            try:
+                # Find processes matching pattern
+                result = subprocess.run(
+                    ["powershell", "-Command", 
+                     f"Get-Process -Name '{pattern}*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"],
+                    capture_output=True, text=True, timeout=5
+                )
+                pids = [p.strip() for p in result.stdout.strip().split("\n") if p.strip()]
+                
+                if pids:
+                    subprocess.run(
+                        ["powershell", "-Command", f"Stop-Process -Id {','.join(pids)} -Force -ErrorAction SilentlyContinue"],
+                        capture_output=True, timeout=5
+                    )
+                    killed += len(pids)
+            except Exception:
+                pass
+    else:
+        # Unix: Use pkill
+        for pattern in browser_patterns:
+            try:
+                result = subprocess.run(
+                    ["pgrep", "-f", pattern],
+                    capture_output=True, text=True, timeout=5
+                )
+                pids = [p.strip() for p in result.stdout.strip().split("\n") if p.strip()]
+                
+                if pids:
+                    subprocess.run(["kill", "-9"] + pids, capture_output=True, timeout=5)
+                    killed += len(pids)
+            except Exception:
+                pass
+    
+    if killed > 0 and verbose:
+        print(f"[~] Cleaned up {killed} stale browser process(es)")
+    
+    return killed
 
 
 def get_mcps_dir() -> Path:
@@ -139,7 +191,7 @@ def create_directory_structure(mcps_dir: Path, verbose: bool = True) -> None:
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
         if verbose:
-            print(f"✓ Created: {directory}")
+            print(f"[+] Created: {directory}")
     
     # Create user_tools.py at root (separate from memory data)
     # Write header if file doesn't exist OR is empty (0 bytes)
@@ -147,7 +199,7 @@ def create_directory_structure(mcps_dir: Path, verbose: bool = True) -> None:
     if not user_tools_file.exists() or user_tools_file.stat().st_size == 0:
         user_tools_file.write_text("# User-defined tools saved via save_tool()\n# This file is auto-loaded at sandbox startup\n")
         if verbose:
-            print(f"✓ Created: {user_tools_file}")
+            print(f"[+] Created: {user_tools_file}")
 
 
 def copy_example_configs(mcps_dir: Path, force: bool = False, verbose: bool = True) -> None:
@@ -159,14 +211,14 @@ def copy_example_configs(mcps_dir: Path, force: bool = False, verbose: bool = Tr
     source_config = servers_dir / "mcp-servers.json"
     if not source_config.exists():
         if verbose:
-            print(f"⚠ No example config found at {source_config}")
+            print(f"[!] No example config found at {source_config}")
         return
     
     dest_config = mcps_dir / "mcp-servers.json"
     
     if dest_config.exists() and not force:
         if verbose:
-            print(f"⏭ Skipped: {dest_config} (already exists, use --force to overwrite)")
+            print(f"[-] Skipped: {dest_config} (already exists, use --force to overwrite)")
         return
     
     # Read and update paths in the config
@@ -176,6 +228,15 @@ def copy_example_configs(mcps_dir: Path, force: bool = False, verbose: bool = Tr
     # Update paths to point to the actual server locations
     if "mcpServers" in config:
         for server_name, server_config in config["mcpServers"].items():
+            # Update command to absolute path if it's a relative .venv path
+            if "command" in server_config:
+                cmd = server_config["command"]
+                if ".venv" in cmd and not Path(cmd).is_absolute():
+                    # Resolve relative to script directory
+                    cmd_path = script_dir / cmd.replace("/", os.sep)
+                    if cmd_path.exists():
+                        server_config["command"] = str(cmd_path.resolve())
+
             if "args" in server_config:
                 # Update relative paths to absolute paths
                 new_args = []
@@ -193,9 +254,9 @@ def copy_example_configs(mcps_dir: Path, force: bool = False, verbose: bool = Tr
     
     with open(dest_config, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
-    
+
     if verbose:
-        print(f"✓ Created: {dest_config}")
+        print(f"[+] Created: {dest_config}")
 
 
 def generate_api_docs(verbose: bool = True) -> bool:
@@ -205,11 +266,11 @@ def generate_api_docs(verbose: bool = True) -> bool:
     
     if not gen_script.exists():
         if verbose:
-            print(f"⚠ generate_api_docs.py not found at {gen_script}")
+            print(f"[!] generate_api_docs.py not found at {gen_script}")
         return False
     
     if verbose:
-        print("\n📝 Generating API documentation...")
+        print("\n[*] Generating API documentation...")
     
     import subprocess
     result = subprocess.run(
@@ -221,7 +282,7 @@ def generate_api_docs(verbose: bool = True) -> bool:
     
     if result.returncode == 0:
         if verbose:
-            print("✓ API documentation generated successfully")
+            print("[+] API documentation generated successfully")
             # Print summary from output
             for line in result.stdout.split("\n"):
                 if line.strip() and not line.startswith("2"):  # Skip log lines
@@ -229,7 +290,7 @@ def generate_api_docs(verbose: bool = True) -> bool:
         return True
     else:
         if verbose:
-            print(f"✗ Failed to generate API docs: {result.stderr}")
+            print(f"[X] Failed to generate API docs: {result.stderr}")
         return False
 
 
@@ -283,7 +344,7 @@ render_chart(data, 'line', x='date', y='value', series='category')
     viz_file.parent.mkdir(parents=True, exist_ok=True)
     viz_file.write_text(content, encoding="utf-8")
     if verbose:
-        print(f"✓ Created: {viz_file}")
+        print(f"[+] Created: {viz_file}")
 
 
 def copy_templates(mcps_dir: Path, verbose: bool = True) -> None:
@@ -293,7 +354,7 @@ def copy_templates(mcps_dir: Path, verbose: bool = True) -> None:
     
     if not source_dir.exists():
         if verbose:
-            print(f"⏭ No templates found in {source_dir}")
+            print(f"[-] No templates found in {source_dir}")
         return
     
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -304,7 +365,7 @@ def copy_templates(mcps_dir: Path, verbose: bool = True) -> None:
         shutil.copy2(template_file, target_file)
         copied += 1
         if verbose:
-            print(f"✓ Copied: {target_file}")
+            print(f"[+] Copied: {target_file}")
     
     if verbose and copied > 0:
         print(f"  ({copied} template(s) copied to {target_dir})")
@@ -335,6 +396,11 @@ def main():
         help="Skip killing stale processes and containers"
     )
     parser.add_argument(
+        "--cleanup-only",
+        action="store_true",
+        help="Only run cleanup (kill stale processes, containers, browsers) then exit"
+    )
+    parser.add_argument(
         "--quiet", "-q",
         action="store_true",
         help="Suppress output"
@@ -345,16 +411,32 @@ def main():
     
     mcps_dir = get_mcps_dir()
     
+    # Handle --cleanup-only mode
+    if args.cleanup_only:
+        if verbose:
+            print("[~] Running cleanup only...")
+        mcp_killed = kill_stale_mcp_processes(verbose=verbose)
+        containers_removed = cleanup_stale_containers(verbose=verbose)
+        browsers_killed = cleanup_browser_processes(verbose=verbose)
+        total = mcp_killed + containers_removed + browsers_killed
+        if verbose:
+            if total == 0:
+                print("[*] Nothing to clean up")
+            else:
+                print("[+] Cleanup complete")
+        return
+    
     if verbose:
-        print(f"\n🚀 Preparing MCP Server Code Execution Mode")
-        print(f"   Target directory: {mcps_dir}\n")
+        print(f"\n[*] Preparing MCP Server Code Execution Mode")
+        print(f"    Target directory: {mcps_dir}\n")
     
     # Step 0a: Kill stale MCP server processes
     if not args.skip_cleanup:
         if verbose:
-            print("🔍 Checking for stale processes...")
+            print("[?] Checking for stale processes...")
         kill_stale_mcp_processes(verbose=verbose)
         cleanup_stale_containers(verbose=verbose)
+        cleanup_browser_processes(verbose=verbose)
     
     # Step 0b: Clear executions if requested
     if args.clear_executions:
@@ -362,17 +444,17 @@ def main():
         if executions_dir.exists():
             shutil.rmtree(executions_dir)
             if verbose:
-                print(f"🗑️  Cleared: {executions_dir}")
+                print(f"[~] Cleared: {executions_dir}")
         executions_dir.mkdir(parents=True, exist_ok=True)
     
     # Step 1: Create directory structure
     if verbose:
-        print("📁 Creating directory structure...")
+        print("[*] Creating directory structure...")
     create_directory_structure(mcps_dir, verbose=verbose)
     
     # Step 2: Copy example configs
     if verbose:
-        print("\n📋 Setting up server configurations...")
+        print("\n[*] Setting up server configurations...")
     copy_example_configs(mcps_dir, force=args.force, verbose=verbose)
     
     # Step 3: Generate API docs
@@ -381,20 +463,20 @@ def main():
     
     # Step 4: Generate visualization guidelines
     if verbose:
-        print("\n📊 Generating visualization guidelines...")
+        print("\n[*] Generating visualization guidelines...")
     generate_viz_guidelines(mcps_dir, verbose=verbose)
     
     # Step 5: Copy code templates
     if verbose:
-        print("\n📝 Copying code templates...")
+        print("\n[*] Copying code templates...")
     copy_templates(mcps_dir, verbose=verbose)
     
     if verbose:
-        print(f"\n✅ Setup complete!")
-        print(f"\n📖 Next steps:")
-        print(f"   1. Review/edit server configs in {mcps_dir}")
-        print(f"   2. Run: uv run python mcp_server_code_execution_mode.py")
-        print(f"   3. Or use VS Code: @python-sandbox in Copilot Chat")
+        print(f"\n[+] Setup complete!")
+        print(f"\n[*] Next steps:")
+        print(f"    1. Review/edit server configs in {mcps_dir}")
+        print(f"    2. Run: uv run python mcp_server_code_execution_mode.py")
+        print(f"    3. Or use VS Code: @python-sandbox in Copilot Chat")
 
 
 if __name__ == "__main__":

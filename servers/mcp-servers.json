@@ -1,33 +1,33 @@
 {
   "mcpServers": {
     "weather": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/weather.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/weather.py"],
       "description": "Get weather information for cities (current conditions and forecasts)"
     },
     "sports": {
-      "command": "python", 
-      "args": ["${workspaceFolder}/servers/sports.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/sports.py"],
       "description": "Get live scores, standings, and schedules for NFL, NBA, MLB, NHL, Soccer, and F1"
     },
     "stocks": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/stocks.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/stocks.py"],
       "description": "Get real-time stock quotes, historical prices, market indices, and cryptocurrency data"
     },
     "fx": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/fx.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/fx.py"],
       "description": "Convert currencies and get exchange rates (EUR, USD, GBP, JPY, and 30+ currencies)"
     },
     "wikipedia": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/wikipedia.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/wikipedia.py"],
       "description": "Search Wikipedia and get article summaries, historical events, and random articles"
     },
     "msforms": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/msforms.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/msforms.py"],
       "description": "Fetch Microsoft Forms data (questions, responses, aggregated stats) for analysis with pandas. Owner auto-detected from form ID.",
       "env": {
         "MS_FORMS_TENANT": "YOUR_MS_TENANT_ID",
@@ -36,6 +36,31 @@
         "MS_FORMS_BEARER": "YOUR_MS_FORMS_BEARER",
         "MS_FORMS_COOKIES": "YOUR_MS_FORMS_COOKIES"
       }
+    },
+    "browser": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/browser.py"],
+      "description": "Web automation - navigate pages, click, type, screenshot using CeSail/Playwright. Browser runs on host, sandbox code controls it via RPC.",
+      "env": {
+        "BROWSER_HEADLESS": "true",
+        "BROWSER_TIMEOUT_MS": "30000",
+        "BROWSER_TYPE": "chromium"
+      }
+    },
+    "countries": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/countries.py"],
+      "description": "Get country information - population, capital, region, languages, currencies, and flags"
+    },
+    "openlibrary": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/openlibrary.py"],
+      "description": "Search books and authors, get book details by ISBN, author biographies, and book covers"
+    },
+    "hackernews": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/hackernews.py"],
+      "description": "Get Hacker News top/new/best stories, user profiles, and search stories via Algolia"
     }
   }
 }

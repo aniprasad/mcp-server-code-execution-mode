@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import urllib.error
 import urllib.request
 import urllib.parse
@@ -36,16 +36,11 @@ try:
         StockQuote, HistoricalPrice, MarketIndex, MarketSummary,
         StockSearchResult, StockHistory
     )
-    HAS_SCHEMAS = True
 except ImportError:
-    try:
-        from .schemas import (
-            StockQuote, HistoricalPrice, MarketIndex, MarketSummary,
-            StockSearchResult, StockHistory
-        )
-        HAS_SCHEMAS = True
-    except ImportError:
-        HAS_SCHEMAS = False
+    from .schemas import (
+        StockQuote, HistoricalPrice, MarketIndex, MarketSummary,
+        StockSearchResult, StockHistory
+    )
 
 SERVER_NAME = "stocks"
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart"
@@ -133,25 +128,25 @@ def _parse_quote(meta: Dict[str, Any], symbol: str) -> Dict[str, Any]:
     change = price - prev_close if prev_close else 0
     change_pct = (change / prev_close * 100) if prev_close else 0
     
-    return {
-        "symbol": symbol.upper(),
-        "name": meta.get("longName", meta.get("shortName", symbol)),
-        "price": round(price, 2),
-        "change": round(change, 2),
-        "change_percent": round(change_pct, 2),
-        "currency": meta.get("currency", "USD"),
-        "exchange": meta.get("exchangeName", ""),
-        "market_state": meta.get("marketState", "REGULAR"),
-        "volume": meta.get("regularMarketVolume", 0),
-        "volume_formatted": _format_number(meta.get("regularMarketVolume", 0), 0),
-        "day_high": meta.get("regularMarketDayHigh"),
-        "day_low": meta.get("regularMarketDayLow"),
-        "year_high": meta.get("fiftyTwoWeekHigh"),
-        "year_low": meta.get("fiftyTwoWeekLow"),
-        "market_cap": meta.get("marketCap"),
-        "market_cap_formatted": _format_number(meta.get("marketCap"), 2) if meta.get("marketCap") else None,
-        "timestamp": datetime.now().isoformat(),
-    }
+    return StockQuote(
+        symbol=symbol.upper(),
+        name=meta.get("longName", meta.get("shortName", symbol)),
+        price=round(price, 2),
+        change=round(change, 2),
+        change_percent=round(change_pct, 2),
+        currency=meta.get("currency", "USD"),
+        exchange=meta.get("exchangeName", ""),
+        market_state=meta.get("marketState", "REGULAR"),
+        volume=meta.get("regularMarketVolume", 0) or 0,
+        volume_formatted=_format_number(meta.get("regularMarketVolume", 0), 0),
+        day_high=meta.get("regularMarketDayHigh"),
+        day_low=meta.get("regularMarketDayLow"),
+        year_high=meta.get("fiftyTwoWeekHigh"),
+        year_low=meta.get("fiftyTwoWeekLow"),
+        market_cap=meta.get("marketCap"),
+        market_cap_formatted=_format_number(meta.get("marketCap"), 2) if meta.get("marketCap") else None,
+        timestamp=datetime.now().isoformat(),
+    ).model_dump()
 
 
 # =============================================================================
@@ -297,24 +292,24 @@ async def get_history(symbol: str, period: str = "1mo") -> Dict[str, Any]:
             continue  # Skip missing data points
         
         date_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M" if interval in ["5m", "15m"] else "%Y-%m-%d")
-        prices.append({
-            "date": date_str,
-            "open": round(opens[i], 2) if opens[i] else None,
-            "high": round(highs[i], 2) if highs[i] else None,
-            "low": round(lows[i], 2) if lows[i] else None,
-            "close": round(closes[i], 2) if closes[i] else None,
-            "volume": volumes[i] if volumes[i] else 0,
-        })
+        prices.append(HistoricalPrice(
+            date=date_str,
+            open=round(opens[i], 2) if opens[i] else None,
+            high=round(highs[i], 2) if highs[i] else None,
+            low=round(lows[i], 2) if lows[i] else None,
+            close=round(closes[i], 2) if closes[i] else None,
+            volume=volumes[i] if volumes[i] else 0,
+        ))
     
-    return {
-        "symbol": symbol,
-        "name": meta.get("longName", meta.get("shortName", symbol)),
-        "currency": meta.get("currency", "USD"),
-        "period": period,
-        "interval": interval,
-        "prices_count": len(prices),
-        "prices": prices,
-    }
+    return StockHistory(
+        symbol=symbol,
+        name=meta.get("longName", meta.get("shortName", symbol)),
+        currency=meta.get("currency", "USD"),
+        period=period,
+        interval=interval,
+        prices_count=len(prices),
+        prices=prices,
+    ).model_dump()
 
 
 async def search_symbol(query: str) -> Dict[str, Any]:
@@ -331,12 +326,12 @@ async def search_symbol(query: str) -> Dict[str, Any]:
     for q in quotes:
         quote_type = q.get("quoteType", "")
         if quote_type in ["EQUITY", "ETF", "MUTUALFUND", "INDEX"]:
-            results.append({
-                "symbol": q.get("symbol", ""),
-                "name": q.get("shortname", q.get("longname", "")),
-                "type": quote_type,
-                "exchange": q.get("exchange", ""),
-            })
+            results.append(StockSearchResult(
+                symbol=q.get("symbol", ""),
+                name=q.get("shortname", q.get("longname", "")),
+                type=quote_type,
+                exchange=q.get("exchange", ""),
+            ).model_dump())
     
     return {
         "query": query,
@@ -362,26 +357,23 @@ async def get_market_summary() -> Dict[str, Any]:
                 change = price - prev if prev else 0
                 change_pct = (change / prev * 100) if prev else 0
                 
-                indices.append({
-                    "symbol": idx["symbol"],
-                    "name": idx["name"],
-                    "price": round(price, 2),
-                    "change": round(change, 2),
-                    "change_percent": round(change_pct, 2),
-                })
+                indices.append(MarketIndex(
+                    symbol=idx["symbol"],
+                    name=idx["name"],
+                    price=round(price, 2),
+                    change=round(change, 2),
+                    change_percent=round(change_pct, 2),
+                ))
         except Exception as e:
             logger.warning(f"Failed to fetch {idx['symbol']}: {e}")
-            indices.append({
-                "symbol": idx["symbol"],
-                "name": idx["name"],
-                "error": str(e),
-            })
+            # Skip failed indices - can't create MarketIndex without price
+            continue
     
-    return {
-        "timestamp": datetime.now().isoformat(),
-        "indices_count": len(indices),
-        "indices": indices,
-    }
+    return MarketSummary(
+        timestamp=datetime.now().isoformat(),
+        indices_count=len(indices),
+        indices=indices,
+    ).model_dump()
 
 
 async def get_crypto(symbol: str) -> Dict[str, Any]:

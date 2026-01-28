@@ -350,7 +350,7 @@ Create `.mcp/mcp-servers.json`:
 }
 ```
 
-> 💡 **Note:** The weather, sports, and stocks servers all use free APIs (no API key required).
+> 💡 **Note:** The weather, sports, stocks, fx, and wikipedia servers all use free APIs (no API key required). The browser server uses CeSail/Playwright for local web automation.
 
 ### Step 3: Verify Discovery
 
@@ -425,7 +425,7 @@ Each server can have its own environment variables (useful for API keys):
 
 These variables are passed to the server process, not to the sandbox.
 
-> 💡 **Note:** weather.py, sports.py, and stocks.py all use free APIs.
+> 💡 **Note:** weather.py, sports.py, stocks.py, fx.py, and wikipedia.py all use free APIs. browser.py uses CeSail/Playwright.
 
 ---
 

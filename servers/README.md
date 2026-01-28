@@ -9,6 +9,16 @@ This directory contains standalone MCP servers that can be used with mcp-server-
 3. Implement your tools
 4. Add a config file to `.mcp/` or register via environment
 
+### Installation
+
+Most servers work out of the box after `uv sync`. For browser automation:
+
+```bash
+# Install browser dependencies
+uv pip install cesail playwright
+uv run playwright install chromium
+```
+
 ## Structure
 
 ```
@@ -18,6 +28,10 @@ servers/
 ├── weather.py        # Weather API (Open-Meteo, free)
 ├── sports.py         # Sports API (ESPN, free)
 ├── stocks.py         # Stock/crypto API (Yahoo Finance, free)
+├── fx.py             # Currency exchange rates (frankfurter.dev, free)
+├── wikipedia.py      # Wikipedia API (free)
+├── msforms.py        # Microsoft Forms (requires auth)
+├── browser.py        # Web automation (CeSail/Playwright)
 ├── requirements.txt  # Dependencies
 └── README.md
 ```
@@ -25,10 +39,12 @@ servers/
 ## Usage in Sandbox
 
 ```python
-# Pass servers=["weather", "sports", "stocks"] to load them
+# Pass servers=["weather", "sports", "stocks", "fx", "wikipedia", "msforms", "browser"] to load them
 weather = await mcp_weather.get_weather(city="Seattle")
 games = await mcp_sports.scoreboard(sport="nba")
 quote = await mcp_stocks.quote(symbol="AAPL")
+rates = await mcp_fx.rates(base="USD")
+article = await mcp_wikipedia.random()
 
 # Combine data across servers:
 for game in games["games"]:
@@ -77,6 +93,43 @@ for game in games["games"]:
   - `decode_form(form_id)` - Decode form ID to extract OrgId, OwnerId, TableId
 - **Notes**: Owner ID auto-extracted from form_id. Auth tokens expire after ~1 hour.
 
+### fx
+- **API**: [Frankfurter](https://frankfurter.dev/) (free, no API key)
+- **Currencies**: EUR, USD, GBP, JPY, and 30+ major currencies
+- **Tools**:
+  - `convert(amount, from_currency, to_currency)` - Convert between currencies
+  - `rates(base)` - Get all exchange rates for a base currency
+  - `history(from_currency, to_currency, days)` - Historical exchange rates
+
+### wikipedia
+- **API**: [Wikipedia REST API](https://en.wikipedia.org/api/rest_v1/) (free)
+- **Tools**:
+  - `summary(title)` - Get article summary by title
+  - `search(query, limit)` - Search for articles
+  - `on_this_day(month, day, type)` - Historical events on a date
+  - `random()` - Get a random article
+  - `trending(limit)` - Most viewed articles
+  - `featured()` - Today's featured article
+
+### browser
+- **API**: [CeSail](https://github.com/anthropics/cesail) / [Playwright](https://playwright.dev/)
+- **Requires**: `pip install cesail && playwright install chromium`
+- **Tools**:
+  - `navigate(url)` - Navigate to a URL
+  - `back()` / `forward()` - Browser history navigation
+  - `get_page_info(include_screenshot)` - Get current page URL, title, available actions
+  - `click(selector)` - Click an element by CSS selector
+  - `type_text(selector, text)` - Type text into an input field
+  - `hover(selector)` - Hover over an element
+  - `select_option(selector, value)` - Select dropdown option
+  - `scroll(direction, amount)` - Scroll page ('down'/'up', 'viewport'/'half')
+  - `screenshot(full_page)` - Capture screenshot as base64
+  - `wait_for_selector(selector, timeout_ms, state)` - Wait for element
+  - `wait(ms)` - Wait for milliseconds
+  - `execute_raw_action(action_type, params)` - Execute raw CeSail action
+  - `close_browser()` - Close the browser instance
+- **Notes**: Runs in headless mode by default. Set `BROWSER_HEADLESS=false` for visible browser.
+
 ## Output Schemas
 
 We use Pydantic models in `schemas.py` for:
@@ -109,39 +162,46 @@ class GameInfo(BaseModel):
 | `NewsArticle` | sports.news | News headline |
 | `StockQuote` | stocks.quote, stocks.crypto | Real-time stock/crypto quote |
 | `HistoricalPrice` | stocks.history | OHLCV price data point |
+| `FxConversion` | fx.convert | Currency conversion result |
+| `FxRates` | fx.rates | Exchange rates for a base currency |
+| `WikipediaSummary` | wikipedia.summary, random | Article summary |
+| `BrowserNavigateResult` | browser.navigate | Navigation result with URL/title |
+| `BrowserScreenshotResult` | browser.screenshot | Screenshot with base64 data |
 | `FormQuestion` | msforms.get_form_data | Question definition with choices/rating scale |
 | `FormDataResult` | msforms.get_form_data | Complete form data with responses |
 | `FormSummaryResult` | msforms.get_form_summary | Aggregated form statistics |
 
 ## Configuration
 
-Create `.mcp/mcp-servers.json`:
+The `prepare.py` script auto-generates `.mcp/mcp-servers.json` from `servers/mcp-servers.json`.
+
+To run the servers, they use the project's virtual environment:
 
 ```json
 {
   "mcpServers": {
     "weather": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/weather.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/weather.py"],
       "description": "Get weather for cities"
     },
-    "sports": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/sports.py"],
-      "description": "Get live scores, standings, schedules for NFL, NBA, MLB, NHL, Soccer, F1"
-    },
-    "stocks": {
-      "command": "python",
-      "args": ["${workspaceFolder}/servers/stocks.py"],
-      "description": "Get real-time stock quotes, historical prices, and crypto data"
+    "browser": {
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/browser.py"],
+      "description": "Web automation with CeSail/Playwright",
+      "env": {
+        "BROWSER_HEADLESS": "true"
+      }
     }
   }
 }
 ```
 
+> **Note:** On macOS/Linux, change `.venv/Scripts/python.exe` to `.venv/bin/python`.
+
 After adding/modifying servers, regenerate the API documentation:
 ```bash
-uv run python generate_api_docs.py
+uv run python prepare.py --force
 ```
 
 ## APIs Used
@@ -150,4 +210,8 @@ uv run python generate_api_docs.py
 |--------|-----|-------|
 | weather | [Open-Meteo](https://open-meteo.com/) | Free weather data |
 | sports | ESPN | Live scores, standings, schedules |
-| stocks | [Yahoo Finance](https://finance.yahoo.com/) | Free stock/crypto data, no API key required |
+| stocks | [Yahoo Finance](https://finance.yahoo.com/) | Free stock/crypto data, no API key |
+| fx | [Frankfurter](https://frankfurter.dev/) | Free currency exchange rates |
+| wikipedia | [Wikipedia REST API](https://en.wikipedia.org/api/rest_v1/) | Free encyclopedia data |
+| browser | [CeSail](https://github.com/anthropics/cesail) / Playwright | Web automation (requires install) |
+| msforms | Microsoft Forms | Private API, requires auth tokens |

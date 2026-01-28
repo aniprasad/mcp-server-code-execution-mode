@@ -6,17 +6,16 @@ These schemas serve dual purposes:
 2. Auto-generated documentation for LLMs to understand output structures
 
 Usage in tools:
-    from schemas import MatchInfo, WeatherInfo
+    from schemas import WeatherInfo, StockQuote
     
     # Return validated data:
-    return MatchInfo(home="Arsenal", away="Chelsea", ...).model_dump()
+    return WeatherInfo(city="Seattle", temp=72.5, ...).model_dump()
     
     # Get schema for documentation:
-    MatchInfo.model_json_schema()
+    WeatherInfo.model_json_schema()
 """
 
-from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -103,6 +102,7 @@ class StandingEntry(BaseModel):
     points: Optional[int] = Field(None, description="Points (for leagues using points)")
     games_back: Optional[str] = Field(None, description="Games behind leader")
     streak: Optional[str] = Field(None, description="Current streak (e.g., 'W3')")
+    last_10: Optional[str] = Field(None, description="Record in last 10 games")
     division: Optional[str] = Field(None, description="Division/conference name")
 
 
@@ -120,6 +120,19 @@ class SportInfo(BaseModel):
     
     code: str = Field(description="Sport code to use in API calls (e.g., 'nba', 'epl')")
     name: str = Field(description="Full sport/league name (e.g., 'NBA', 'Premier League')")
+
+
+class RankingEntry(BaseModel):
+    """A team's position in a ranking poll (e.g., AP Top 25)."""
+    
+    rank: int = Field(description="Current ranking position")
+    previous_rank: Optional[int] = Field(None, description="Previous week's ranking")
+    team: str = Field(description="Team name")
+    abbreviation: str = Field(description="Team abbreviation")
+    points: Optional[float] = Field(None, description="Voting points received")
+    first_place_votes: Optional[int] = Field(None, description="Number of first-place votes")
+    trend: Optional[str] = Field(None, description="Movement trend: 'up', 'down', or '-'")
+    record: Optional[str] = Field(None, description="Team's win-loss record (e.g., '12-1')")
 
 
 # =============================================================================
@@ -145,6 +158,8 @@ class StockQuote(BaseModel):
     year_low: Optional[float] = Field(None, description="52-week low")
     market_cap: Optional[float] = Field(None, description="Market capitalization")
     market_cap_formatted: Optional[str] = Field(None, description="Market cap with B/T suffix")
+    timestamp: Optional[str] = Field(None, description="ISO timestamp when quote was fetched")
+    crypto_name: Optional[str] = Field(None, description="Crypto name (only present for crypto quotes)")
 
 
 class HistoricalPrice(BaseModel):
@@ -354,6 +369,181 @@ class FormDataResult(BaseModel):
 
 
 # =============================================================================
+# Countries Schemas (REST Countries API)
+# =============================================================================
+
+class Country(BaseModel):
+    """Information about a country."""
+
+    name: str = Field(description="Common country name (e.g., 'France')")
+    official_name: str = Field(description="Official country name (e.g., 'French Republic')")
+    cca2: str = Field(description="ISO 3166-1 alpha-2 code (e.g., 'FR')")
+    cca3: str = Field(description="ISO 3166-1 alpha-3 code (e.g., 'FRA')")
+    capital: List[str] = Field(description="List of capital cities (some countries have multiple)")
+    region: str = Field(description="Geographic region (e.g., 'Europe', 'Asia')")
+    subregion: str = Field(description="Geographic subregion (e.g., 'Western Europe')")
+    population: int = Field(description="Country population")
+    area: Optional[float] = Field(None, description="Land area in square kilometers")
+    languages: List[str] = Field(description="Official languages spoken")
+    currencies: List[dict] = Field(description="List of currencies: [{code, name, symbol}]")
+    flag_emoji: str = Field(description="Flag emoji character")
+    flag_png: str = Field(description="URL to flag PNG image")
+
+
+# =============================================================================
+# Open Library Schemas
+# =============================================================================
+
+class OLBook(BaseModel):
+    """Book information from Open Library."""
+
+    key: str = Field(description="Open Library work key (e.g., '/works/OL45804W')")
+    title: str = Field(description="Book title")
+    authors: List[str] = Field(description="List of author names")
+    first_publish_year: Optional[Union[int, str]] = Field(None, description="Year first published (int from search, string from edition)")
+    isbn: List[str] = Field(description="List of ISBNs (10 and 13 digit)")
+    subjects: List[str] = Field(description="Subject categories")
+    cover_url: Optional[str] = Field(None, description="URL to book cover image")
+    edition_count: int = Field(description="Number of editions")
+    language: List[str] = Field(description="Languages available")
+    description: Optional[str] = Field(None, description="Book description/synopsis")
+    publishers: Optional[List[str]] = Field(None, description="Publishers")
+    publish_date: Optional[str] = Field(None, description="Publication date")
+    number_of_pages: Optional[int] = Field(None, description="Page count")
+
+
+class OLAuthor(BaseModel):
+    """Author information from Open Library."""
+
+    key: str = Field(description="Open Library author key (e.g., '/authors/OL34184A')")
+    name: str = Field(description="Author name")
+    birth_date: Optional[str] = Field(None, description="Birth date")
+    death_date: Optional[str] = Field(None, description="Death date (if applicable)")
+    bio: Optional[str] = Field(None, description="Author biography")
+    works_count: Optional[int] = Field(None, description="Number of works by author")
+    photo_url: Optional[str] = Field(None, description="URL to author photo")
+
+
+class OLSearchResult(BaseModel):
+    """Open Library search results."""
+
+    query: str = Field(description="Original search query")
+    total: int = Field(description="Total number of results found")
+    books: List[OLBook] = Field(description="List of matching books")
+
+
+# =============================================================================
+# Hacker News Schemas
+# =============================================================================
+
+class HNStory(BaseModel):
+    """A Hacker News story/post."""
+
+    id: int = Field(description="Story ID")
+    title: str = Field(description="Story title")
+    url: Optional[str] = Field(None, description="URL to external content (None for Ask HN, Show HN)")
+    score: int = Field(description="Upvote score")
+    by: str = Field(description="Username who submitted")
+    time: Optional[str] = Field(None, description="Submission time (ISO 8601)")
+    time_unix: int = Field(description="Submission time (Unix timestamp)")
+    descendants: int = Field(description="Total comment count")
+    type: str = Field(description="Item type: story, job, poll")
+    text: Optional[str] = Field(None, description="HTML text content (for Ask HN, etc.)")
+
+
+class HNUser(BaseModel):
+    """A Hacker News user profile."""
+
+    id: str = Field(description="Username")
+    karma: int = Field(description="User's karma score")
+    about: Optional[str] = Field(None, description="User's about text (HTML)")
+    created: Optional[str] = Field(None, description="Account creation time (ISO 8601)")
+    created_unix: int = Field(description="Account creation time (Unix timestamp)")
+    submitted_count: int = Field(description="Number of submissions (stories + comments)")
+
+
+class HNSearchHit(BaseModel):
+    """A single search result from Algolia HN Search."""
+
+    objectID: str = Field(description="Algolia object ID")
+    title: str = Field(description="Story title")
+    url: Optional[str] = Field(None, description="Story URL")
+    author: str = Field(description="Author username")
+    points: int = Field(description="Upvote points")
+    num_comments: int = Field(description="Number of comments")
+    created_at: str = Field(description="Creation time (ISO 8601)")
+    story_id: Optional[int] = Field(None, description="Parent story ID (for comments)")
+    type: str = Field(description="Type: story, comment")
+
+
+class HNSearchResult(BaseModel):
+    """Hacker News search results from Algolia."""
+
+    query: str = Field(description="Original search query")
+    total: int = Field(description="Total number of results")
+    hits: List[HNSearchHit] = Field(description="List of search hits")
+
+
+# =============================================================================
+# Browser Schemas
+# =============================================================================
+
+class BrowserAction(BaseModel):
+    """An interactive element on a web page."""
+    
+    type: str = Field(description="Action type: BUTTON, LINK, INPUT, etc.")
+    selector: str = Field(description="Element index for use with execute_raw_action (e.g., '2', '15')")
+    text: str = Field(description="Text/label of the element (from text or importantText)")
+    confidence: float = Field(description="Confidence score (0-1) for the action relevance")
+
+
+class BrowserScreenshot(BaseModel):
+    """Base64-encoded screenshot data."""
+    
+    data: str = Field(description="Base64-encoded PNG image data")
+    format: str = Field(default="png", description="Image format (always 'png')")
+    encoding: str = Field(default="base64", description="Encoding type (always 'base64')")
+
+
+class BrowserPageInfo(BaseModel):
+    """Structured information about the current web page."""
+    
+    success: bool = Field(description="Whether the operation succeeded")
+    url: str = Field(description="Current page URL")
+    title: str = Field(description="Page title")
+    actions: List[BrowserAction] = Field(description="List of interactive elements/actions available on the page")
+    actions_count: int = Field(description="Number of actions found")
+    screenshot: Optional[BrowserScreenshot] = Field(None, description="Screenshot if requested via include_screenshot=True")
+    error: Optional[str] = Field(None, description="Error message if success=False")
+
+
+class BrowserNavigateResult(BaseModel):
+    """Result of a navigation operation."""
+    
+    success: bool = Field(description="Whether navigation succeeded")
+    url: str = Field(description="URL after navigation")
+    title: str = Field(description="Page title after navigation")
+    error: Optional[str] = Field(None, description="Error message if success=False")
+
+
+class BrowserActionResult(BaseModel):
+    """Result of a browser action (click, type, scroll, etc.)."""
+    
+    success: bool = Field(description="Whether the action succeeded")
+    error: Optional[str] = Field(None, description="Error message if success=False")
+
+
+class BrowserScreenshotResult(BaseModel):
+    """Result of a screenshot operation."""
+    
+    success: bool = Field(description="Whether screenshot succeeded")
+    data: Optional[str] = Field(None, description="Base64-encoded PNG image data")
+    format: str = Field(default="png", description="Image format")
+    encoding: str = Field(default="base64", description="Data encoding")
+    error: Optional[str] = Field(None, description="Error message if success=False")
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -362,12 +552,12 @@ def schema_to_description(model: type[BaseModel]) -> str:
     Convert a Pydantic model to a human-readable description for tool documentation.
     
     Example:
-        >>> print(schema_to_description(MatchInfo))
-        Information about a soccer/football match.
+        >>> print(schema_to_description(WeatherInfo))
+        Current weather conditions for a city.
         
         Fields:
-          - home (str): Home team name
-          - away (str): Away team name
+          - city (str): City name
+          - temp (float): Temperature in requested units
           ...
     """
     schema = model.model_json_schema()
@@ -386,55 +576,6 @@ def schema_to_description(model: type[BaseModel]) -> str:
         lines.append(f"  - {name} ({type_str}): {desc}")
     
     return "\n".join(lines)
-
-
-def get_all_schemas() -> dict:
-    """
-    Return all available output schemas for discovery.
-    
-    Returns:
-        Dict mapping schema names to their JSON schemas.
-    """
-    models = [
-        WeatherInfo,
-        ForecastInfo,
-        ForecastDay,
-        CoordinatesInfo,
-        GameInfo,
-        StandingEntry,
-        NewsArticle,
-        SportInfo,
-        StockQuote,
-        HistoricalPrice,
-        MarketIndex,
-        MarketSummary,
-        StockSearchResult,
-        StockHistory,
-        ConversionResult,
-        ExchangeRates,
-        RateHistory,
-        RateHistoryEntry,
-        ArticleSummary,
-        SearchResult,
-        SearchResults,
-        OnThisDayEvent,
-        OnThisDayResponse,
-        TrendingArticle,
-        TrendingResponse,
-        # Microsoft Forms
-        FormQuestion,
-        FormSummaryQuestion,
-        FormResponse,
-        FormSummaryResult,
-        FormDataResult,
-    ]
-    return {
-        model.__name__: {
-            "description": model.__doc__,
-            "schema": model.model_json_schema(),
-        }
-        for model in models
-    }
 
 
 # =============================================================================
@@ -457,6 +598,7 @@ TOOL_OUTPUT_SCHEMAS: dict[str, type[BaseModel]] = {
     "sports.team_schedule": GameInfo,  # Returns list of GameInfo
     "sports.list_sports": SportInfo,  # Returns list of SportInfo
     "sports.news": NewsArticle,  # Returns list of NewsArticle
+    "sports.rankings": RankingEntry,  # Returns list of RankingEntry per poll
     
     # Stocks tools (tool names as registered in MCP)
     "stocks.quote": StockQuote,
@@ -481,6 +623,44 @@ TOOL_OUTPUT_SCHEMAS: dict[str, type[BaseModel]] = {
     # Microsoft Forms tools
     "msforms.get_form_data": FormDataResult,
     "msforms.get_form_summary": FormSummaryResult,
+    
+    # Countries tools
+    "countries.get_country": Country,
+    "countries.search_countries": Country,  # Returns list
+    "countries.by_region": Country,  # Returns list
+    "countries.by_currency": Country,  # Returns list
+    "countries.by_language": Country,  # Returns list
+
+    # Open Library tools
+    "openlibrary.search_books": OLSearchResult,
+    "openlibrary.get_book": OLBook,
+    "openlibrary.get_author": OLAuthor,
+    "openlibrary.search_authors": OLAuthor,  # Returns dict with list
+    # openlibrary.get_cover returns simple {cover_url, size} - no schema needed
+
+    # Hacker News tools
+    "hackernews.top_stories": HNStory,  # Returns list
+    "hackernews.new_stories": HNStory,  # Returns list
+    "hackernews.best_stories": HNStory,  # Returns list
+    "hackernews.story": HNStory,
+    "hackernews.user": HNUser,
+    "hackernews.search": HNSearchResult,
+
+    # Browser tools
+    "browser.navigate": BrowserNavigateResult,
+    "browser.back": BrowserNavigateResult,
+    "browser.forward": BrowserNavigateResult,
+    "browser.get_page_info": BrowserPageInfo,
+    "browser.click": BrowserActionResult,
+    "browser.type_text": BrowserActionResult,
+    "browser.hover": BrowserActionResult,
+    "browser.select_option": BrowserActionResult,
+    "browser.scroll": BrowserActionResult,
+    "browser.screenshot": BrowserScreenshotResult,
+    "browser.wait_for_selector": BrowserActionResult,
+    "browser.wait": BrowserActionResult,
+    "browser.execute_raw_action": BrowserActionResult,
+    "browser.close_browser": BrowserActionResult,
 }
 
 

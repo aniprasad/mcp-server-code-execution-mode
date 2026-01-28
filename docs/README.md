@@ -54,6 +54,11 @@ mcp-server-code-execution-mode/
 │   ├── _template.py                     # Template for new servers
 │   ├── weather.py                       # Weather API server
 │   ├── sports.py                        # Multi-sport API server (ESPN)
+│   ├── stocks.py                        # Stock/crypto API server (Yahoo Finance)
+│   ├── fx.py                            # Currency exchange API server (Frankfurter)
+│   ├── wikipedia.py                     # Wikipedia API server
+│   ├── msforms.py                       # Microsoft Forms API server
+│   ├── browser.py                       # Web automation server (CeSail/Playwright)
 │   └── schemas.py                       # Pydantic output schemas
 ├── .github/agents/                      # VS Code Copilot agent configuration
 │   └── python-sandbox.agent.md          # Agent instructions

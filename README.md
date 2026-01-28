@@ -315,11 +315,15 @@ cd mcp-server-code-execution-mode
 # Create virtual environment and install dependencies
 uv sync
 
+# Optional: Install browser automation support
+uv pip install cesail playwright
+uv run playwright install chromium
+
 # Set up .mcp/ directory and generate API docs
 uv run python prepare.py
 ```
 
-> **Note:** `uv sync` automatically creates a `.venv/` virtual environment. The `prepare.py` script creates `.mcp/`, copies example configs, and generates API documentation.
+> **Note:** `uv sync` automatically creates a `.venv/` virtual environment. The `prepare.py` script creates `.mcp/`, copies example configs, and generates API documentation. The browser dependencies are optional—only needed if you want to use the browser automation server.
 
 ### 3. Configure MCP Servers (Optional)
 
@@ -329,13 +333,15 @@ The `prepare.py` script already creates `.mcp/` and copies example configs. To a
 {
   "mcpServers": {
     "weather": {
-      "command": "python",
-      "args": ["C:/path/to/servers/weather.py"],
+      "command": ".venv/Scripts/python.exe",
+      "args": ["servers/weather.py"],
       "description": "Get weather information"
     }
   }
 }
 ```
+
+> **Note:** On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`.
 
 After adding servers, regenerate the API documentation:
 

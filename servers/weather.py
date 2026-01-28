@@ -16,7 +16,7 @@ import logging
 import urllib.request
 import urllib.error
 import urllib.parse
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -145,14 +145,14 @@ def _geocode(city: str) -> Dict[str, Any]:
 async def get_coordinates(city: str) -> Dict[str, Any]:
     """Get coordinates for a city."""
     location = _geocode(city)
-    return {
-        "city": location.get("name", city),
-        "country": location.get("country", ""),
-        "latitude": location.get("latitude"),
-        "longitude": location.get("longitude"),
-        "timezone": location.get("timezone", ""),
-        "population": location.get("population"),
-    }
+    return CoordinatesInfo(
+        city=location.get("name", city),
+        country=location.get("country", ""),
+        latitude=location.get("latitude"),
+        longitude=location.get("longitude"),
+        timezone=location.get("timezone", ""),
+        population=location.get("population"),
+    ).model_dump()
 
 
 async def get_weather(city: str) -> Dict[str, Any]:

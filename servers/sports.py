@@ -21,7 +21,7 @@ Usage in sandbox:
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 import urllib.error
 import urllib.request
@@ -31,34 +31,46 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 # Import schemas for validation
-try:
-    from schemas import GameInfo, StandingEntry, NewsArticle, SportInfo
-    HAS_SCHEMAS = True
-except ImportError:
-    HAS_SCHEMAS = False
+from schemas import GameInfo, StandingEntry, NewsArticle, SportInfo, RankingEntry
 
 SERVER_NAME = "sports"
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
 
 # Sport/League mapping for ESPN API
 SPORTS = {
-    # US Sports
+    # US Sports - Football
     "nfl": {"sport": "football", "league": "nfl", "name": "NFL"},
+    "ncaaf": {"sport": "football", "league": "college-football", "name": "College Football"},
+    "cfl": {"sport": "football", "league": "cfl", "name": "CFL"},
+    "xfl": {"sport": "football", "league": "xfl", "name": "XFL"},
+    
+    # US Sports - Basketball
     "nba": {"sport": "basketball", "league": "nba", "name": "NBA"},
     "wnba": {"sport": "basketball", "league": "wnba", "name": "WNBA"},
+    "ncaab": {"sport": "basketball", "league": "mens-college-basketball", "name": "Men's College Basketball"},
+    "wncaab": {"sport": "basketball", "league": "womens-college-basketball", "name": "Women's College Basketball"},
+    
+    # US Sports - Baseball & Hockey
     "mlb": {"sport": "baseball", "league": "mlb", "name": "MLB"},
+    "collegebaseball": {"sport": "baseball", "league": "college-baseball", "name": "College Baseball"},
     "nhl": {"sport": "hockey", "league": "nhl", "name": "NHL"},
-    "ncaaf": {"sport": "football", "league": "college-football", "name": "College Football"},
-    "ncaab": {"sport": "basketball", "league": "mens-college-basketball", "name": "College Basketball"},
-    "mls": {"sport": "soccer", "league": "usa.1", "name": "MLS"},
     
     # Soccer leagues
+    "mls": {"sport": "soccer", "league": "usa.1", "name": "MLS"},
     "epl": {"sport": "soccer", "league": "eng.1", "name": "Premier League"},
     "laliga": {"sport": "soccer", "league": "esp.1", "name": "La Liga"},
     "bundesliga": {"sport": "soccer", "league": "ger.1", "name": "Bundesliga"},
     "seriea": {"sport": "soccer", "league": "ita.1", "name": "Serie A"},
     "ligue1": {"sport": "soccer", "league": "fra.1", "name": "Ligue 1"},
     "ucl": {"sport": "soccer", "league": "uefa.champions", "name": "Champions League"},
+    
+    # Tennis
+    "atp": {"sport": "tennis", "league": "atp", "name": "ATP Tour"},
+    "wta": {"sport": "tennis", "league": "wta", "name": "WTA Tour"},
+    
+    # Golf
+    "pga": {"sport": "golf", "league": "pga", "name": "PGA Tour"},
+    "lpga": {"sport": "golf", "league": "lpga", "name": "LPGA Tour"},
     
     # Motorsport
     "f1": {"sport": "racing", "league": "f1", "name": "Formula 1"},
@@ -145,48 +157,50 @@ def _format_game(event: Dict[str, Any], sport_key: str) -> Dict[str, Any]:
     display_clock = status.get("displayClock", "")
     period = status.get("period", 0)
     
-    result = {
-        "home_team": home_team.get("displayName", home_team.get("name", "TBD")),
-        "away_team": away_team.get("displayName", away_team.get("name", "TBD")),
-        "home_score": home_score,
-        "away_score": away_score,
-        "score": score,
-        "status": game_status,
-        "detail": status_type.get("shortDetail", ""),
-        "start_time": event.get("date", ""),
-        "venue": competition.get("venue", {}).get("fullName", ""),
-        "broadcast": ", ".join(
+    return GameInfo(
+        home_team=home_team.get("displayName", home_team.get("name", "TBD")),
+        away_team=away_team.get("displayName", away_team.get("name", "TBD")),
+        home_score=home_score,
+        away_score=away_score,
+        score=score,
+        status=game_status,
+        detail=status_type.get("shortDetail", ""),
+        start_time=event.get("date", ""),
+        venue=competition.get("venue", {}).get("fullName", ""),
+        broadcast=", ".join(
             b.get("names", [""])[0] if b.get("names") else ""
             for b in competition.get("broadcasts", [])
         ) or None,
-        "sport": SPORTS[sport_key]["name"],
-    }
-    
-    # Add period/clock for live games
-    if game_status == "LIVE":
-        result["clock"] = display_clock
-        result["period"] = period
-    
-    return result
+        sport=SPORTS[sport_key]["name"],
+        clock=display_clock if game_status == "LIVE" else None,
+        period=period if game_status == "LIVE" else None,
+    ).model_dump()
 
 
-def _format_standing(entry: Dict[str, Any], sport_key: str) -> Dict[str, Any]:
+def _format_standing(entry: Dict[str, Any], sport_key: str, division: Optional[str] = None) -> Dict[str, Any]:
     """Format ESPN standings entry."""
     team = entry.get("team", {})
     stats = {s.get("name"): s.get("value") for s in entry.get("stats", [])}
     
-    return {
-        "rank": int(stats.get("playoffSeed", stats.get("rank", 0))),
-        "team": team.get("displayName", team.get("name", "")),
-        "wins": int(stats.get("wins", 0)),
-        "losses": int(stats.get("losses", 0)),
-        "ties": int(stats.get("ties", 0)) if "ties" in stats else None,
-        "pct": float(stats.get("winPercent", stats.get("winPct", 0))),
-        "points": int(stats.get("points", 0)) if "points" in stats else None,
-        "games_back": stats.get("gamesBehind", stats.get("GB")),
-        "streak": stats.get("streak"),
-        "last_10": stats.get("Last10"),
-    }
+    # Helper to convert to string (ESPN sometimes returns floats)
+    def to_str(val):
+        if val is None:
+            return None
+        return str(val) if not isinstance(val, str) else val
+    
+    return StandingEntry(
+        rank=int(stats.get("playoffSeed", stats.get("rank", 0))),
+        team=team.get("displayName", team.get("name", "")),
+        wins=int(stats.get("wins", 0)),
+        losses=int(stats.get("losses", 0)),
+        ties=int(stats.get("ties", 0)) if "ties" in stats else None,
+        pct=float(stats.get("winPercent", stats.get("winPct", 0))),
+        points=int(stats.get("points", 0)) if "points" in stats else None,
+        games_back=to_str(stats.get("gamesBehind", stats.get("GB"))),
+        streak=to_str(stats.get("streak")),
+        last_10=to_str(stats.get("Last10")),
+        division=division,
+    ).model_dump()
 
 
 # =============================================================================
@@ -280,6 +294,29 @@ async def list_tools() -> List[Tool]:
                 "required": ["sport"],
             },
         ),
+        Tool(
+            name="rankings",
+            description="Get rankings/polls for college sports (AP Top 25, Coaches Poll, CFP).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "sport": {
+                        "type": "string",
+                        "description": "Sport code. Supported: ncaaf (College Football), ncaab (Men's College Basketball)",
+                    },
+                    "poll": {
+                        "type": "string",
+                        "description": "Poll name filter (e.g., 'ap', 'coaches', 'cfp'). Default: returns all polls",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of teams to return per poll (default: 25)",
+                        "default": 25,
+                    },
+                },
+                "required": ["sport"],
+            },
+        ),
     ]
 
 
@@ -327,8 +364,7 @@ async def get_standings(sport: str, group: Optional[str] = None) -> Dict[str, An
             continue
         
         for entry in child.get("standings", {}).get("entries", []):
-            standing = _format_standing(entry, sport)
-            standing["division"] = division_name
+            standing = _format_standing(entry, sport, division=division_name)
             standings.append(standing)
     
     # Sort by rank/wins
@@ -395,16 +431,20 @@ async def get_team_schedule(sport: str, team: str) -> Dict[str, Any]:
 async def list_sports() -> Dict[str, Any]:
     """List all available sports."""
     categories = {
-        "US Sports": ["nfl", "nba", "wnba", "mlb", "nhl", "ncaaf", "ncaab", "mls"],
-        "Soccer": ["epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl"],
+        "Football": ["nfl", "ncaaf", "cfl", "xfl"],
+        "Basketball": ["nba", "wnba", "ncaab", "wncaab"],
+        "Baseball & Hockey": ["mlb", "collegebaseball", "nhl"],
+        "Soccer": ["mls", "epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl"],
+        "Tennis": ["atp", "wta"],
+        "Golf": ["pga", "lpga"],
         "Motorsport": ["f1"],
     }
     
     result = {}
-    for category, sports in categories.items():
+    for category, sport_list in categories.items():
         result[category] = [
-            {"code": s, "name": SPORTS[s]["name"]}
-            for s in sports
+            SportInfo(code=s, name=SPORTS[s]["name"]).model_dump()
+            for s in sport_list
         ]
     
     return {"sports": result}
@@ -421,17 +461,73 @@ async def get_news(sport: str, limit: int = 5) -> Dict[str, Any]:
     
     articles = []
     for article in data.get("articles", [])[:limit]:
-        articles.append({
-            "headline": article.get("headline", ""),
-            "description": article.get("description", ""),
-            "published": article.get("published", ""),
-            "link": article.get("links", {}).get("web", {}).get("href", ""),
-        })
+        articles.append(NewsArticle(
+            headline=article.get("headline", ""),
+            description=article.get("description", ""),
+            published=article.get("published", ""),
+            link=article.get("links", {}).get("web", {}).get("href", ""),
+        ).model_dump())
     
     return {
         "sport": SPORTS[sport]["name"],
         "articles_count": len(articles),
         "articles": articles,
+    }
+
+
+async def get_rankings(sport: str, poll: Optional[str] = None, limit: int = 25) -> Dict[str, Any]:
+    """Get rankings/polls for college sports."""
+    sport = sport.lower()
+    
+    # Only certain sports support rankings
+    supported = {"ncaaf", "ncaab"}
+    if sport not in supported:
+        return {"error": f"Rankings only available for: {', '.join(supported)}"}
+    
+    info = SPORTS[sport]
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{info['sport']}/{info['league']}/rankings"
+    
+    data = _espn_request(url)
+    
+    polls = []
+    for ranking in data.get("rankings", []):
+        poll_name = ranking.get("name", "")
+        poll_short = ranking.get("shortName", "")
+        
+        # Filter by poll if specified
+        if poll:
+            poll_lower = poll.lower()
+            if poll_lower not in poll_name.lower() and poll_lower not in poll_short.lower():
+                continue
+        
+        ranks = []
+        for rank in ranking.get("ranks", [])[:limit]:
+            team = rank.get("team", {})
+            ranks.append(RankingEntry(
+                rank=rank.get("current", 0),
+                previous_rank=rank.get("previous"),
+                team=team.get("location", "") + " " + team.get("name", ""),
+                abbreviation=team.get("abbreviation", ""),
+                points=rank.get("points"),
+                first_place_votes=rank.get("firstPlaceVotes"),
+                trend=rank.get("trend"),
+                record=rank.get("recordSummary", ""),
+            ).model_dump())
+        
+        polls.append({
+            "name": poll_name,
+            "short_name": poll_short,
+            "last_updated": ranking.get("lastUpdated", ""),
+            "teams_count": len(ranks),
+            "teams": ranks,
+        })
+    
+    return {
+        "sport": SPORTS[sport]["name"],
+        "season": data.get("requestedSeason", {}).get("year"),
+        "week": data.get("latestWeek"),
+        "polls_count": len(polls),
+        "polls": polls,
     }
 
 
@@ -465,6 +561,12 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
             result = await get_news(
                 sport=arguments["sport"],
                 limit=arguments.get("limit", 5),
+            )
+        elif name == "rankings":
+            result = await get_rankings(
+                sport=arguments["sport"],
+                poll=arguments.get("poll"),
+                limit=arguments.get("limit", 25),
             )
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
