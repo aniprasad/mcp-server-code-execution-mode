@@ -11,6 +11,11 @@ Environment Variables:
     BROWSER_TYPE: Browser type - chromium, firefox, webkit (default: "chromium")
     BROWSER_BLOCKED_PATTERNS: Comma-separated URL patterns to block (default: see BLOCKED_PATTERNS)
 
+This **heavily** leverages Akila Jayawardane's tool here https://github.com/AkilaJay/CeSail/tree/main/cesail.
+The idea was to use this as a tool and see if the LLM is able to reason about web pages effectively.
+One of the core advantages of CeSail (atleast from my opinion) is its ability to properly analyze in a structured output format - which sort of plays well
+with the overall design of this solution.
+    
 Usage in sandbox:
     page = await mcp_browser.navigate(url="https://example.com")
     info = await mcp_browser.get_page_info()
