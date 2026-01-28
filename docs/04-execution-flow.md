@@ -216,7 +216,7 @@ entrypoint_path.write_text(
 )
 ```
 
-`_render_entrypoint()` generates ~600 lines of Python including:
+`_render_entrypoint()` generates ~1100 lines of Python including:
 
 ```python
 # Generated entrypoint.py structure:

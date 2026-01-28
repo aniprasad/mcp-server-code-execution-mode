@@ -71,7 +71,7 @@ AI gets 1 tool: run_python (~200 tokens)
 │                                                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐           │
 │  │ MCP Server  │  │ MCP Server  │  │ MCP Server  │           │
-│  │  weather    │  │   sports    │  │  filesystem │           │
+│  │  weather    │  │   sports    │  │   stocks    │           │
 │  └─────────────┘  └─────────────┘  └─────────────┘           │
 │                (These have network access)                    │
 └──────────────────────────────────────────────────────────────┘
@@ -94,7 +94,7 @@ Inside the sandbox, the AI can:
 ```python
 # Discover what's available
 servers = runtime.discovered_servers()
-# → ['weather', 'sports', 'filesystem']
+# → ['weather', 'sports', 'stocks']
 
 # Search for tools
 matches = await runtime.search_tool_docs("current temperature")

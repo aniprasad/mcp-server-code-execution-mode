@@ -13,9 +13,37 @@ The entrypoint script is the "operating system" for the sandbox. It provides:
 | **RPC Mechanism** | Send requests to host, wait for responses |
 | **MCP Modules** | Fake `mcp.runtime` and `mcp.servers` packages |
 | **MCP Proxies** | `mcp_weather`, `mcp_sports`, etc. |
-| **Memory Helpers** | `save_memory()`, `load_memory()`, `save_tool()` |
-| **Artifact Helpers** | `save_image()`, `save_file()`, `execution_folder()` |
+| **Memory Helpers** | `save_memory()`, `load_memory()`, `delete_memory()`, `save_tool()` |
+| **Artifact Helpers** | `save_image()`, `save_file()`, `render_chart()`, `execution_folder()` |
+| **Time Helpers** | `now()`, `convert_time()`, `list_timezones()` |
 | **Main Loop** | Wait for code, execute, repeat |
+
+---
+
+## 📁 Projects Folder Structure
+
+The `/projects/` directory is mounted from the host and provides persistent storage:
+
+```
+/projects/
+├── memory/                    # Persistent key-value storage
+│   ├── user_city.json
+│   └── session_data.json
+├── executions/                # LRU-managed (max 50 folders)
+│   ├── 001_2026-01-27_224615/
+│   │   ├── code.py           # Executed code
+│   │   ├── output.txt        # Stdout/stderr
+│   │   ├── images/           # Charts and images
+│   │   └── data/             # CSV, JSON files
+│   └── 002_2026-01-27_224627/
+└── user_tools.py              # Persistent saved functions
+```
+
+| Path | Purpose | Persistence |
+|------|---------|-------------|
+| `/projects/memory/` | Key-value storage via `save_memory()` | Permanent |
+| `/projects/executions/` | Execution artifacts, charts, data files | LRU (max 50) |
+| `/projects/user_tools.py` | User-defined functions via `save_tool()` | Permanent |
 
 ---
 
@@ -58,7 +86,7 @@ DISCOVERED_SERVERS = {
 # Paths for persistence
 USER_TOOLS_PATH = Path("/projects/user_tools.py")  # At root, separate from data
 MEMORY_DIR = Path("/projects/memory")
-EXECUTION_DIR = Path("/projects/execution")  # Current execution's artifact folder
+EXECUTION_DIR = Path("/projects/executions")  # Current execution's artifact folder (LRU max 50)
 
 # RPC tracking
 _PENDING_RESPONSES = {}
@@ -345,6 +373,16 @@ def update_memory(key, updater):
     new_value = updater(current)
     save_memory(key, new_value)
     return new_value
+
+def delete_memory(key):
+    """Delete a memory key from persistent storage."""
+    sanitized_key = _sanitize_memory_key(key)
+    memory_file = MEMORY_DIR / f"{sanitized_key}.json"
+
+    if memory_file.exists():
+        memory_file.unlink()
+        return f"Memory '{key}' deleted."
+    return f"Memory '{key}' not found."
 ```
 
 ### Tool Persistence
@@ -425,13 +463,90 @@ def execution_folder():
     return str(EXECUTION_DIR)
 ```
 
-**Usage Example:**
+### Charting
+
 ```python
-# For charts, use render_chart() instead:
-data = [{"x": 1, "y": 4}, {"x": 2, "y": 5}, {"x": 3, "y": 6}]
-url = render_chart(data, "line", x="x", y="y")
-print(f"Saved to: {url}")
-# → file:///C:/Users/you/MCPs/executions/001_.../images/chart.png
+def render_chart(data, chart_type="line", *, x=None, y=None, title=None,
+                 xlabel=None, ylabel=None, filename=None, **kwargs):
+    """
+    Render a chart from data and save to execution folder.
+
+    Args:
+        data: List of dicts, pandas DataFrame, or dict of lists
+        chart_type: "line", "bar", "scatter", "pie", "histogram"
+        x: Column name for x-axis (auto-detected if not specified)
+        y: Column name(s) for y-axis (can be list for multi-series)
+        title: Chart title
+        xlabel: X-axis label
+        ylabel: Y-axis label
+        filename: Output filename (auto-generated if not specified)
+        **kwargs: Additional matplotlib/seaborn arguments
+
+    Returns:
+        str: A file:// URL to the saved chart image
+
+    Example:
+        data = [{"month": "Jan", "sales": 100}, {"month": "Feb", "sales": 150}]
+        url = render_chart(data, "bar", x="month", y="sales", title="Monthly Sales")
+        print(f"Chart saved: {url}")
+    """
+    # Uses matplotlib/seaborn to render chart
+    # Saves to EXECUTION_DIR/images/
+    # Returns clickable file:// URL
+```
+
+### Time Helpers
+
+```python
+def now(timezone=None):
+    """
+    Get current datetime, optionally in a specific timezone.
+
+    Args:
+        timezone: Timezone name (e.g., "America/New_York", "UTC", "Europe/London")
+                  If None, returns local time
+
+    Returns:
+        datetime: Current datetime (timezone-aware if timezone specified)
+
+    Example:
+        local = now()                      # Local time
+        utc = now("UTC")                   # UTC time
+        ny = now("America/New_York")       # New York time
+    """
+
+def convert_time(dt, from_tz=None, to_tz=None):
+    """
+    Convert datetime between timezones.
+
+    Args:
+        dt: datetime object or ISO format string
+        from_tz: Source timezone (uses dt's timezone if None)
+        to_tz: Target timezone (required)
+
+    Returns:
+        datetime: Converted datetime
+
+    Example:
+        utc_time = now("UTC")
+        tokyo_time = convert_time(utc_time, to_tz="Asia/Tokyo")
+    """
+
+def list_timezones(filter=None):
+    """
+    List available timezone names.
+
+    Args:
+        filter: Optional string to filter timezone names (case-insensitive)
+
+    Returns:
+        list: List of matching timezone names
+
+    Example:
+        all_tz = list_timezones()                    # All timezones
+        us_tz = list_timezones("america")            # US timezones
+        european = list_timezones("europe")          # European timezones
+    """
 ```
 
 ---

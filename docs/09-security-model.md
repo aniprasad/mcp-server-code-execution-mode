@@ -165,7 +165,7 @@ socket.socket().connect(("evil.com", 80))
 │   /ipc                 │  Read/Write│  Mounted from host (entrypoint)    │
 │   /projects/memory     │  Read/Write│  Persistent memory (.mcp/memory) │
 │   /projects/user_tools.py│  Read/Write│  Saved functions (.mcp/user_tools.py)│
-│   /projects/execution  │  Read/Write│  Execution artifacts (LRU)         │
+│   /projects/executions │  Read/Write│  Execution artifacts (LRU max 50)  │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```

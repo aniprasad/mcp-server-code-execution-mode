@@ -313,7 +313,7 @@ mcp_server_code_execution_mode.py
 ├── Core Classes
 │   ├── PersistentMCPClient
 │   ├── RootlessContainerSandbox
-│   │   └── _render_entrypoint() (generates 600-line script)
+│   │   └── _render_entrypoint() (generates ~1100-line script)
 │   ├── SandboxInvocation
 │   └── MCPBridge
 │

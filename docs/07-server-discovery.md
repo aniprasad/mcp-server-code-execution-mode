@@ -321,6 +321,27 @@ The alias is used for proxy names: `mcp_weather`, `mcp_my_cool_server`, etc.
 
 ---
 
+## 📊 Available Servers and APIs
+
+The project includes several pre-built MCP servers:
+
+| Server | API Used | Description |
+|--------|----------|-------------|
+| `weather` | Open-Meteo | Weather forecasts and current conditions |
+| `sports` | ESPN | Live scores, standings, schedules |
+| `stocks` | Yahoo Finance | Stock quotes, crypto prices, market data |
+| `fx` | Frankfurter | Currency exchange rates |
+| `wikipedia` | Wikipedia | Article search and summaries |
+| `countries` | REST Countries | Country data and information |
+| `openlibrary` | Open Library | Book search and metadata |
+| `hackernews` | HN Firebase API | Tech news, stories, comments |
+| `browser` | Playwright | Web automation and scraping |
+| `msforms` | Microsoft Graph | Forms responses (requires auth) |
+
+> 💡 All servers except `browser` and `msforms` use free, public APIs that don't require authentication.
+
+---
+
 ## 📍 Example: Setting Up Your Own Servers
 
 ### Step 1: Create Server Directory
@@ -350,7 +371,7 @@ Create `.mcp/mcp-servers.json`:
 }
 ```
 
-> 💡 **Note:** The weather, sports, stocks, fx, and wikipedia servers all use free APIs (no API key required). The browser server uses CeSail/Playwright for local web automation.
+> 💡 **Note:** The weather, sports, stocks, fx, wikipedia, countries, openlibrary, and hackernews servers all use free APIs (no API key required). The browser server uses Playwright for local web automation.
 
 ### Step 3: Verify Discovery
 
@@ -425,7 +446,7 @@ Each server can have its own environment variables (useful for API keys):
 
 These variables are passed to the server process, not to the sandbox.
 
-> 💡 **Note:** weather.py, sports.py, stocks.py, fx.py, and wikipedia.py all use free APIs. browser.py uses CeSail/Playwright.
+> 💡 **Note:** weather.py, sports.py, stocks.py, fx.py, wikipedia.py, countries.py, openlibrary.py, and hackernews.py all use free APIs. browser.py uses Playwright.
 
 ---
 

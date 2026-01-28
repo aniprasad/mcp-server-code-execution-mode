@@ -18,9 +18,9 @@ A standard protocol for AI models to communicate with external tools and service
 ### MCP Server
 
 A program that exposes "tools" to an AI. Examples:
-- **Filesystem server** - read/write files
 - **Weather server** - get weather data
-- **Database server** - query databases
+- **Stocks server** - get stock quotes and crypto prices
+- **Wikipedia server** - search and read articles
 
 Each server defines tools with:
 - **Name**: e.g., `read_file`
@@ -88,7 +88,7 @@ The process of finding out what MCP servers and tools are available, without loa
 ```python
 # "What servers exist?"
 runtime.discovered_servers()
-# → ['weather', 'sports', 'filesystem']
+# → ['weather', 'sports', 'stocks']
 
 # "What tools does 'weather' have?"
 await runtime.query_tool_docs('weather')
@@ -150,7 +150,7 @@ Here's how all the pieces fit together:
 │   │   │                                                              │  │  │
 │   │   │    ┌────────────────────────────────────────────────────┐   │  │  │
 │   │   │    │              entrypoint.py                         │   │  │  │
-│   │   │    │              (~600 lines)                          │   │  │  │
+│   │   │    │              (~1100 lines)                         │   │  │  │
 │   │   │    │                                                    │   │  │  │
 │   │   │    │  • Stream proxies (print → JSON)                   │   │  │  │
 │   │   │    │  • MCP proxies (mcp_weather, mcp_sports)           │   │  │  │
@@ -182,7 +182,7 @@ A crucial thing to understand is that there are **two different pieces of Python
 
 ### 1. Entrypoint Code (Infrastructure)
 - Written by the bridge developers (us)
-- ~600 lines
+- ~1100 lines
 - Runs ONCE when container starts
 - Provides: proxies, helpers, main loop
 - Lives in: `/ipc/entrypoint.py` inside the container

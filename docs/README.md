@@ -46,20 +46,24 @@ This dramatically reduces token usage while giving the LLM more flexibility thro
 ```
 mcp-server-code-execution-mode/
 ├── main.py                              # Entry point
-├── mcp_server_code_execution_mode.py    # Core implementation (~2800 lines)
+├── mcp_server_code_execution_mode.py    # Core implementation (~3800 lines)
 ├── prepare.py                           # Setup script (creates .mcp/, generates docs)
 ├── generate_api_docs.py                 # Generates .mcp/docs/API.md
 ├── docs/                                # This documentation folder
 ├── servers/                             # Example MCP servers
 │   ├── _template.py                     # Template for new servers
-│   ├── weather.py                       # Weather API server
+│   ├── weather.py                       # Weather API server (Open-Meteo)
 │   ├── sports.py                        # Multi-sport API server (ESPN)
 │   ├── stocks.py                        # Stock/crypto API server (Yahoo Finance)
 │   ├── fx.py                            # Currency exchange API server (Frankfurter)
 │   ├── wikipedia.py                     # Wikipedia API server
+│   ├── countries.py                     # Country data API server (REST Countries)
+│   ├── openlibrary.py                   # Book search API server (Open Library)
+│   ├── hackernews.py                    # Tech news API server (HN Firebase API)
 │   ├── msforms.py                       # Microsoft Forms API server
-│   ├── browser.py                       # Web automation server (CeSail/Playwright)
-│   └── schemas.py                       # Pydantic output schemas
+│   ├── browser.py                       # Web automation server (Playwright)
+│   ├── schemas.py                       # Pydantic output schemas
+│   └── templates/                       # Workflow templates for servers
 ├── .github/agents/                      # VS Code Copilot agent configuration
 │   └── python-sandbox.agent.md          # Agent instructions
 └── tests/                               # Test suite
